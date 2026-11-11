@@ -12,6 +12,9 @@ on:
     branches: [main]
     paths: ["mobile/**", "web/index.html", "web/*.png", ".github/workflows/android.yml"]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -84,6 +87,18 @@ jobs:
             mobile/android/app/build/outputs/bundle/release/*.aab
             mobile/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      - name: Publish the APK as a direct download (Releases page, tag android-latest)
+        working-directory: mobile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(ls android/app/build/outputs/apk/*/*.apk | head -1)
+          cp "$APK" /tmp/Tarazu-android-test.apk
+          NOTES="Test build ${{ github.run_number }} from commit ${GITHUB_SHA::7}. Install on Android: open this page on the phone, tap Tarazu-android-test.apk, allow install from unknown sources."
+          gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Tarazu Android test build" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+          gh release edit android-latest --notes "$NOTES" --prerelease
+          gh release upload android-latest /tmp/Tarazu-android-test.apk --clobber
 
       - name: Upload to Google Play
         if: ${{ steps.sign.outputs.signed == 'true' && inputs.track != '' && inputs.track != 'none' }}
