@@ -1,14 +1,12 @@
 {
-  "name": "mobile",
+  "name": "tarazu-mobile",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Tarazu iOS and Android apps (Capacitor)",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:www": "node scripts/build-www.mjs",
+    "sync": "npm run build:www && npx cap sync",
+    "assets": "npx capacitor-assets generate"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "@capacitor/android": "^8.6.0",
     "@capacitor/app": "^8.1.2",
@@ -24,5 +22,6 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.4",
     "@capgo/capacitor-native-biometric": "^8.9.2"
-  }
+  },
+  "private": true
 }

@@ -5,7 +5,7 @@
   "server": {
     "androidScheme": "https",
     "iosScheme": "capacitor",
-    "allowNavigation": []
+    "appStartPath": "/nirani/"
   },
   "android": {
     "allowMixedContent": false,
@@ -17,7 +17,17 @@
     "limitsNavigationsToAppBoundDomains": false
   },
   "plugins": {
-    "SplashScreen": { "launchShowDuration": 800, "backgroundColor": "#0E3B2E", "showSpinner": false },
-    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "backgroundColor": "#0E3B2E",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
   }
 }

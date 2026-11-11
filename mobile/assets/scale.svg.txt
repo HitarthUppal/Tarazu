@@ -1,0 +1,12 @@
+<g fill="none" stroke="#F7F5EE" stroke-linecap="butt">
+  <rect x="490" y="200" width="34" height="600" fill="#F7F5EE" stroke="none"/>
+  <rect x="240" y="312" width="540" height="26" fill="#F7F5EE" stroke="none"/>
+  <rect x="370" y="814" width="282" height="32" fill="#F7F5EE" stroke="none"/>
+  <line x1="244" y1="330" x2="140" y2="598" stroke-width="16"/>
+  <line x1="244" y1="330" x2="350" y2="598" stroke-width="16"/>
+  <line x1="776" y1="330" x2="672" y2="598" stroke-width="16"/>
+  <line x1="776" y1="330" x2="882" y2="598" stroke-width="16"/>
+</g>
+<circle cx="512" cy="212" r="32" fill="#E3B062"/>
+<path d="M116 598 H374 A129 70 0 0 1 116 598 Z" fill="#E3B062"/>
+<path d="M650 598 H908 A129 70 0 0 1 650 598 Z" fill="#E3B062"/>
