@@ -1,0 +1,28 @@
+name: Snapshot public web files from tarazu.live
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download public files
+        run: |
+          set -e
+          mkdir -p web
+          for f in index.html sw.js manifest.webmanifest icon-192.png icon-512.png nirani-logo.png agrimandi-logo.png; do
+            curl -fsS --retry 3 -o "web/$f" "https://tarazu.live/$f"
+            echo "$(sha256sum web/$f)"
+          done
+      - name: Commit snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web
+          git diff --cached --quiet && echo "No change" || git commit -m "Snapshot public web files from tarazu.live"
+          git push

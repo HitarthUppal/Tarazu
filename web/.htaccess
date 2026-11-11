@@ -1,0 +1,30 @@
+DirectoryIndex index.html
+Options -Indexes
+RewriteEngine On
+# tarazu.live layout: /nirani/ is the Nirani app (same files, same server)
+RewriteRule ^nirani$ nirani/ [R=301,L]
+RewriteRule ^nirani/$ index.html [L]
+RewriteRule ^nirani/(.+)$ $1 [L]
+RewriteRule ^ - [L]
+<FilesMatch "^(config\.php|seed\.json|.*\.sqlite.*)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+AddType application/manifest+json .webmanifest
+<IfModule mod_headers.c>
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "microphone=(self), camera=(), geolocation=()"
+</IfModule>
+
+# php -- BEGIN cPanel-generated handler, do not edit
+# Set the “ea-php84” package as the default “PHP” programming language.
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php84___lsphp .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit
