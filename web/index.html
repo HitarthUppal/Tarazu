@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#1f6b4a"><meta name="description" content="Sugar Sale Intelligence System, powered by AgriMandi">
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Tarazu">
-<script>window.TARAZU_HOSTED={api:"api.php",n8n:"https://hitarthuppal1.app.n8n.cloud"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
+<script>window.TARAZU_HOSTED={api:"api.php"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
 <title>Tarazu</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -430,17 +430,20 @@ const toLocalInput = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).to
 const up10 = (x, cap) => Math.max(0, Math.min(num(cap), Math.ceil(num(x) / 10) * 10));
 const pctOf = (qv, base) => num(base) ? Math.round(num(qv) / num(base) * 1000) / 10 : 0;
 const unitSeg = (act, cur, labels) => `<div class="seg" role="group" style="gap:4px">${[["qtl", labels[0]], ["pct", labels[1]]].map(([k,l]) => `<button type="button" class="sm" data-act="${act}" data-k="${k}" aria-pressed="${cur===k}" style="min-height:32px;padding:4px 10px;font-size:13px">${l}</button>`).join("")}</div>`;
-const phoneRequired = () => S.auth && S.auth.phone_required === true;
+const phoneRequired = () => S.auth && S.auth.phone_required === true; const otpRequired = () => S.auth && S.auth.otp_required === true;
 const normPhone = s => { const x = String(s||"").replace(/\D/g,""); return x.length >= 10 ? x.slice(-10) : x; };
 function lastDays(n){ const out = [], t = cycleDay(); for(let i = n-1; i >= 0; i--) out.push(new Date(Date.parse(t + "T00:00:00Z") - i*86400e3).toISOString().slice(0,10)); return out; }
 const pnum = v => num(String(v ?? "").replace(/[,\u20b9\s]/g, ""));
 const askLine = r => V3 ? askLineV3(r) : r && num(r.ask_rate) ? `<div class="askline"><span class="small muted">Price wanted</span><span class="big num">${inr(r.ask_rate)}</span><span class="small muted">avg per qtl${num(r.floor_rate)?` · lowest ${inr(r.floor_rate)}`:""}${refSpot()?` · ${signed(num(r.ask_rate)-refSpot())} vs S/30 spot`:""}</span></div>` : "";
-const HOOKS = {"Market In":"tarazu-market-q8m4z2","Brief In":"tarazu-brief-q8m4z2","Voice Note In":"tarazu-voice-q8m4z2","Report In":"tarazu-report-q8m4z2"};
+/* tarazu-security v1 */
+const HOOKS = {"Market In":1,"Brief In":1,"Voice Note In":1,"Report In":1};
 async function runFlow(triggerName, body, resultNode){
   if(HOSTED){
-    const r = await fetch(HOSTED.n8n + "/webhook/" + HOOKS[triggerName], {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    if(!HOOKS[triggerName]) throw {code:"flow_error", message:"Unknown workflow."};
+    const r = await fetch(HOSTED.api + "?op=flow&trigger=" + encodeURIComponent(triggerName), {method:"POST", headers:{"Content-Type":"application/json", "X-Token":store.get("tarazu.token")||""}, body:JSON.stringify(body)});
     const j = await r.json().catch(() => null);
-    if(!r.ok || !j) throw {code:"flow_error", message:"The workflow did not answer (" + r.status + ")."};
+    if(r.status === 401){ store.set("tarazu.token", null); throw {code:"flow_error", message:"Please sign in again."}; }
+    if(!r.ok || !j) throw {code:"flow_error", message:(j && j.error) || ("The workflow did not answer (" + r.status + ").")};
     return j;
   }
   if(!S.mcp) throw {code:"no_mcp"};
@@ -638,6 +641,7 @@ function phoneLoginView(){
     <form id="phone-form" class="list">
       <label>Mobile number<div class="phone-in"><span>+91</span><input id="ph-num" inputmode="tel" autocomplete="tel-national" maxlength="16" placeholder="98765 43210" value="${esc(S.draft.ph||"")}"></div></label>
       <label>PIN<input id="ph-pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" placeholder="4 to 6 digits"></label>
+      ${S.draft.otpFor ? `<label>Sign-in code<input id="ph-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" autofocus></label><div class="small muted">Sent to ${esc((S.draft.otpSentTo||[]).join(" and "))}. It works for 5 minutes.</div>` : ""}
       <button class="primary" type="submit">Sign in</button></form>
     ${S.err.login?`<div class="notice err">${esc(S.err.login)}</div>`:""}
     <p class="small muted">Not registered? Ask your administrator to add your number.</p>
@@ -707,7 +711,7 @@ function notifCard(n){
 function reportsCard(){
   const rs = S.reports.slice(0,3);
   return `<section class="card news"><div class="row between"><h3>AgriMandi monthly reports</h3><span class="small muted">Last 3 months</span></div>
-    ${rs.length?`<ul>${rs.map(r => `<li><div class="row between"><b>${esc(r.title)}</b>${r.pdf_url?`<a class="small" href="${esc(r.pdf_url)}" target="_blank" rel="noopener">PDF</a>`:""}</div>
+    ${rs.length?`<ul>${rs.map(r => `<li><div class="row between"><b>${esc(r.title)}</b>${r.pdf_url?`<button type="button" class="ghost sm" data-act="open-pdf" data-url="${esc(r.pdf_url)}">PDF</button>`:""}</div>
       ${r.headline?`<div class="small">${esc(r.headline)}</div>`:""}
       ${r.domestic_range?`<div class="small muted">Domestic outlook: ${esc(r.domestic_range)}</div>`:""}
       ${r.outlook?`<details><summary>Price outlook</summary><p class="small" style="white-space:pre-wrap">${esc(r.outlook.slice(0,1800))}</p></details>`:""}</li>`).join("")}</ul>`:`<div class="empty">No reports uploaded yet.</div>`}
@@ -1192,9 +1196,10 @@ function management(){
     <p class="small muted">State picks the ChiniMandi spot market each mill is compared with (KA: South Karnataka, MH: Maharashtra, BR: Uttar Pradesh M/30 as the nearest quoted market).</p>
     <h3>People and logins</h3>
     <div class="tablewrap"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>
-    ${S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client).map(u => `<tr><td>${esc(u.name)}</td><td>${esc(roleLabel(u.role))}</td><td class="num">${V2 ? `<input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="PIN for ${esc(u.name)}" value="${esc(u.pin||"")}" style="width:90px;text-align:left">${u.pin === "0000" ? `<span class="sub" style="color:var(--jaggery)">default PIN</span>` : ""}` : esc(u.pin)}</td><td>${u.id!==S.me.id?`<button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">Remove</button>`:""}</td></tr>`).join("")}</tbody></table></div>
+    ${S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client).map(u => `<tr><td>${esc(u.name)}</td><td>${esc(roleLabel(u.role))}</td><td class="num">${V2 ? `<input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="PIN for ${esc(u.name)}" value="" placeholder="${u.has_pin ? "•••• (set)" : "Set PIN"}" style="width:110px;text-align:left">${u.pin_default ? `<span class="sub" style="color:var(--jaggery)">default PIN</span>` : ""}` : (u.has_pin ? "set" : "not set")}</td><td>${u.id!==S.me.id?`<button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">Remove</button>`:""}</td></tr>`).join("")}</tbody></table></div>
     <form id="user-form" class="row"><input id="nu-name" placeholder="Name" required style="flex:2;min-width:140px"><select id="nu-role" style="flex:1;min-width:120px"><option value="panelist">Advisor</option><option value="manager">Mill manager</option></select><button type="submit">Add</button></form>
-    ${V2 ? (() => { const n = S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client && u.pin === "0000").length; return `<p class="small muted">Change a PIN by typing a new one (4 to 6 digits); it saves when you leave the box and works from the next sign-in. New people start on 0000.${n ? ` <b style="color:var(--jaggery)">${n} ${n === 1 ? "person is" : "people are"} still on the default PIN, so anyone could sign in as them.</b>` : ""}</p>`; })() : `<p class="small muted">New people get PIN 0000 for the prototype.</p>`}
+    ${V2 ? (() => { const n = S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client && u.pin_default).length; return `<p class="small muted">PINs are stored encrypted and are never shown. To reset one, type a new PIN (4 to 6 digits); it saves when you leave the box and signs that person out of every device. New people start on 0000.${n ? ` <b style="color:var(--jaggery)">${n} ${n === 1 ? "person is" : "people are"} still on the default PIN, so anyone could sign in as them.</b>` : ""}</p>`; })() : `<p class="small muted">New people get PIN 0000 for the prototype.</p>`}
+    ${S.me && S.me.role === "owner" ? securityCard() : ""}
     <h3>Holding cost</h3>
     <form id="settings-form" class="grid2"><label>Interest on working capital (% a year)<input id="st-rate" inputmode="decimal" value="${st.rate}"></label><label>Storage and insurance (₹/qtl a month)<input id="st-store" inputmode="decimal" value="${st.storage}"></label><button type="submit">Save rates</button></form>
     ${st.example?`<p class="small muted">These rates are example values. Set the group's real figures.</p>`:""}
@@ -1242,15 +1247,16 @@ function masterView(){
   </section>
   <section class="card"><h2>Master admins</h2><p class="small muted">Master admins can see and manage every client. Keep this list short.</p>
     <div class="tablewrap"><table><thead><tr><th>Name</th><th>PIN</th><th></th></tr></thead><tbody>
-    ${masters.map(u => `<tr><td><input style="width:240px;text-align:left" data-uu="${esc(u.id)}" data-k="name" value="${esc(u.name)}"></td><td><input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" value="${esc(u.pin||"")}" style="width:90px"></td><td>${u.id===S.me.id?`<span class="small muted">You</span>`:`<button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">${S.draft.confirmUser===u.id?"Tap again to remove":"Remove"}</button>`}</td></tr>`).join("")}
+    ${masters.map(u => `<tr><td><input style="width:240px;text-align:left" data-uu="${esc(u.id)}" data-k="name" value="${esc(u.name)}"></td><td><input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" autocomplete="off" value="" placeholder="${u.has_pin ? "•••• (set)" : "Set PIN"}" style="width:110px"></td><td>${u.id===S.me.id?`<span class="small muted">You</span>`:`<button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">${S.draft.confirmUser===u.id?"Tap again to remove":"Remove"}</button>`}</td></tr>`).join("")}
     </tbody></table></div>
     <form id="master-form" class="row"><input id="ma-name" placeholder="Name" required style="flex:2;min-width:160px"><input id="ma-pin" inputmode="numeric" maxlength="6" placeholder="PIN (4 to 6 digits)" required style="flex:1;min-width:140px"><button type="submit">Add master admin</button></form>
     ${S.err.master?`<div class="notice err">${esc(S.err.master)}</div>`:""}
   </section>
   ${signInCard()}
+  ${securityCard()}
   ${notifyCard()}
   <section class="card"><h2>AgriMandi reports</h2><p class="small muted">Shared by every client. Only master admins can add or remove reports.</p>
-    <div class="ledger">${S.reports.map(r => `<div><span>${esc(r.title)}</span><span class="v small">${r.pdf_url?`<a href="${esc(r.pdf_url)}" target="_blank" rel="noopener">PDF</a> · `:""}uploaded ${esc(fmtDay(r.uploaded_at))} <button class="ghost sm" data-act="remove-report" data-id="${esc(r.id)}">${S.draft.confirmReport===r.id?"Tap again":"Remove"}</button></span></div>`).join("")||`<div><span class="muted">None yet</span></div>`}</div>
+    <div class="ledger">${S.reports.map(r => `<div><span>${esc(r.title)}</span><span class="v small">${r.pdf_url?`<button type="button" class="ghost sm" data-act="open-pdf" data-url="${esc(r.pdf_url)}">PDF</button> · `:""}uploaded ${esc(fmtDay(r.uploaded_at))} <button class="ghost sm" data-act="remove-report" data-id="${esc(r.id)}">${S.draft.confirmReport===r.id?"Tap again":"Remove"}</button></span></div>`).join("")||`<div><span class="muted">None yet</span></div>`}</div>
     <label class="btn" style="flex-direction:row">${S.busy.report?`<span class="spin"></span> Converting…`:"Upload an AgriMandi monthly PDF"}<input id="rep-file" type="file" accept="application/pdf" hidden ${S.busy.report?"disabled":""}></label>
     ${S.err.report?`<div class="notice err">${esc(S.err.report)}</div>`:""}
   </section>
@@ -1279,7 +1285,7 @@ function clientAdminView(){
   </section>
   <section class="card"><h2>People and logins</h2>
     <div class="tablewrap"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>
-    ${people.map(u => `<tr><td><input style="width:200px;text-align:left" data-uu="${esc(u.id)}" data-k="name" value="${esc(u.name)}"></td><td><select data-uu="${esc(u.id)}" data-k="role" style="min-height:34px;padding:4px 8px;width:auto">${["owner","manager","panelist"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${roleLabel(r)}</option>`).join("")}</select></td><td><input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" value="${esc(u.pin||"")}" style="width:90px"></td><td><button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">${S.draft.confirmUser===u.id?"Tap again to remove":"Remove"}</button></td></tr>`).join("")||`<tr><td colspan="4" class="muted">No people yet.</td></tr>`}
+    ${people.map(u => `<tr><td><input style="width:200px;text-align:left" data-uu="${esc(u.id)}" data-k="name" value="${esc(u.name)}"></td><td><select data-uu="${esc(u.id)}" data-k="role" style="min-height:34px;padding:4px 8px;width:auto">${["owner","manager","panelist"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${roleLabel(r)}</option>`).join("")}</select></td><td><input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" autocomplete="off" value="" placeholder="${u.has_pin ? "•••• (set)" : "Set PIN"}" style="width:110px"></td><td><button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">${S.draft.confirmUser===u.id?"Tap again to remove":"Remove"}</button></td></tr>`).join("")||`<tr><td colspan="4" class="muted">No people yet.</td></tr>`}
     </tbody></table></div>
     <form id="cuser-form" class="row"><input id="cu-name" placeholder="Name" required style="flex:2;min-width:160px"><select id="cu-role" style="flex:1;min-width:130px"><option value="panelist">Advisor</option><option value="manager">Mill manager</option><option value="owner">Owner</option></select><button type="submit">Add person</button></form>
     <p class="small muted">Edits save when you leave a field. New people get PIN 0000; change it here.</p>
@@ -1312,11 +1318,14 @@ function signInCard(){
   return `<section class="card"><h2>Sign-in and phone numbers</h2>
     <div class="toggle-row"><div><b>Require phone sign-in</b><div class="small muted">${req ? "On: everyone signs in with their mobile number and PIN. The name list is hidden." : "Off: people pick their name from the list. Use Login demo on the sign-in screen to preview the phone sign-in."}</div></div>
       <button class="switch" data-act="phone-required" aria-pressed="${req}">${S.draft.confirmPhoneReq ? "Tap to confirm" : req ? "On" : "Off"}</button></div>
+    <div class="toggle-row"><div><b>Require a one-time code</b><div class="small muted">${otpRequired() ? "On: after the PIN, a 6-digit code is sent to the person's email (and WhatsApp once connected). It works for 5 minutes." : "Off: number and PIN are enough. Turn this on once everyone has an email address saved."}</div></div>
+      <button class="switch" data-act="otp-required" aria-pressed="${otpRequired()}">${S.draft.confirmOtpReq ? "Tap to confirm" : otpRequired() ? "On" : "Off"}</button></div>
+    ${S.draft.confirmOtpReq ? `<div class="notice err small">${people.filter(u => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u.email||"")).length} people have no email address and will not be able to sign in until WhatsApp codes are connected. Tap again to switch it on.</div>` : ""}
     ${S.draft.confirmPhoneReq ? `<div class="notice err small">${missing ? `<b>${missing} ${missing===1?"person has":"people have"} no number</b> and will not be able to sign in. ` : ""}Tap again to switch it on.</div>` : ""}
-    <div class="tablewrap"><table><thead><tr><th>Name</th><th>Client</th><th>Role</th><th>Mobile number</th><th>PIN</th></tr></thead><tbody>
-    ${people.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.role==="master"?"JK India":clientName(u.client_id))}</td><td>${esc(roleLabel(u.role))}</td><td><input data-uu="${esc(u.id)}" data-k="phone" inputmode="tel" maxlength="16" placeholder="10 digits" value="${esc(u.phone||"")}" style="width:140px;text-align:left"></td><td class="num">${esc(u.pin||"")}</td></tr>`).join("")}
+    <div class="tablewrap"><table><thead><tr><th>Name</th><th>Client</th><th>Role</th><th>Mobile number</th><th>Email (for sign-in codes)</th><th>PIN</th></tr></thead><tbody>
+    ${people.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.role==="master"?"JK India":clientName(u.client_id))}</td><td>${esc(roleLabel(u.role))}</td><td><input data-uu="${esc(u.id)}" data-k="phone" inputmode="tel" maxlength="16" placeholder="10 digits" value="${esc(u.phone||"")}" style="width:140px;text-align:left"></td><td><input data-uu="${esc(u.id)}" data-k="email" type="email" inputmode="email" maxlength="120" placeholder="name@company.com" value="${esc(u.email||"")}" style="width:200px;text-align:left"></td><td class="num">${u.has_pin ? (u.pin_default ? "default" : "set") : "none"}</td></tr>`).join("")}
     </tbody></table></div>
-    <p class="small muted">${missing ? `${missing} of ${people.length} without a number. ` : "Everyone has a number. "}Numbers save when you leave the field. PINs stay as they are for now; SMS one-time codes come later.</p></section>`;
+    <p class="small muted">${missing ? `${missing} of ${people.length} without a number. ` : "Everyone has a number. "}Numbers save when you leave the field.</p></section>`;
 }
 function notifyCard(){
   const pv = S.schedPreview;
@@ -1850,10 +1859,41 @@ async function deleteRound(id){
   for(const v of viewsFor(id)) await delC("rviews/" + v.id).catch(() => {});
   await delC("rounds/" + id);
 }
+
+/* ---------- security: server sign-out, report links, activity log ---------- */
+function serverSignOut(tok){ if(!HOSTED || !tok) return; try{ fetch(HOSTED.api + "?op=logout", {method:"POST", headers:{"Content-Type":"application/json", "X-Token":tok}, body:"{}", keepalive:true}).catch(() => {}); }catch(e){} }
+function absUrl(u){ const base = window.TARAZU_NATIVE ? window.TARAZU_NATIVE.apiBase : location.href; return new URL(u, base).href; }
+function openOutside(url){ if(window.TARAZU_NATIVE && window.Capacitor && window.Capacitor.Plugins.Browser) return window.Capacitor.Plugins.Browser.open({url}); window.open(url, "_blank", "noopener"); }
+async function openPdf(raw){
+  if(!HOSTED){ openOutside(raw); return; }
+  const w = window.TARAZU_NATIVE ? null : window.open("about:blank", "_blank");
+  try{ const j = await S.db._call("file_link", {name: raw}); const url = absUrl(j.url); if(w){ w.location = url; } else openOutside(url); }
+  catch(err){ if(w) w.close(); toast(err.message || "Could not open the report"); }
+}
+const AUDIT_LABEL = {login:"Signed in", login_fail:"Failed sign-in", otp_sent:"Sign-in code sent", logout:"Signed out", logout_all:"Signed out of all devices", impersonate:"Master admin opened account", user_change:"Person changed", revoke_sessions:"Devices signed out", delete:"Deleted", round_decided:"Round decided", config_change:"Settings changed", upload:"Report uploaded", ai_brief:"AI brief run", ai_report:"Report read by AI"};
+function securityCard(){
+  if(!HOSTED || !S.me) return "";
+  const rows = S.auditRows || null, nm = id => (S.users.find(u => u.id === id) || {}).name || id || "Unknown";
+  return `<section class="card"><h2>Security</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="ghost" data-act="sec-logout-all">Sign out my other devices</button><button class="ghost" data-act="sec-audit">${rows ? "Refresh activity" : "Show recent activity"}</button></div>
+    <p class="small muted">Changing someone's PIN or role, or removing them, signs them out everywhere straight away.</p>
+    ${rows ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody>${rows.map(r => `<tr><td class="small">${esc(new Date(r.at*1000).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}))}</td><td>${esc(r.user_id ? nm(r.user_id) : "–")}${r.via_master ? ` <span class="chip warn">via ${esc(nm(r.via_master))}</span>` : ""}</td><td>${esc(AUDIT_LABEL[r.action] || r.action)}</td><td class="small muted">${esc(r.action === "user_change" ? nm(r.target) + ": " + ((r.meta && r.meta.fields) || []).join(", ") : (r.target || ""))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nothing yet.</td></tr>`}</tbody></table></div>` : ""}
+  </section>`;
+}
+async function securityClick(a, b, d){
+  if(a === "open-pdf"){ await openPdf(b.dataset.url); return true; }
+  if(a === "sec-logout-all"){ try{ const j = await S.db._call("logout_all", {}); toast(j.signed_out ? `Signed out ${j.signed_out} other device${j.signed_out === 1 ? "" : "s"}` : "No other devices were signed in"); }catch(err){ toast(err.message || "Could not sign out"); } return true; }
+  if(a === "sec-audit"){ try{ const j = await S.db._call("audit_list", {limit:60}); S.auditRows = j.entries || []; render(); }catch(err){ toast(err.message || "Could not load activity"); } return true; }
+  if(a === "otp-required"){ const want = !otpRequired();
+    if(want && !d.confirmOtpReq){ d.confirmOtpReq = true; render(); return true; }
+    d.confirmOtpReq = false; await save("config/auth", {otp_required:want, updated_at:new Date().toISOString(), updated_by:S.me.id}).then(() => toast(want ? "One-time codes are on" : "One-time codes are off")).catch(err => toast(err.message||"Could not save")); render(); return true; }
+  return false;
+}
 async function v3Click(a, b, d){
+  if(await securityClick(a, b, d)) return true;
   if(a === "login-as"){ await loginAs(b.dataset.id); return true; }
   if(a === "back-master"){ await backToMaster(); return true; }
-  if(a === "master-signout"){ store.set("tarazu.mtoken", null); store.set("tarazu.mid", null); render(); toast("Signed out of master admin"); return true; }
+  if(a === "master-signout"){ serverSignOut(store.get("tarazu.mtoken")); store.set("tarazu.mtoken", null); store.set("tarazu.mid", null); render(); toast("Signed out of master admin"); return true; }
   if(!V3) return false;
   if(a === "pick-login" && masterToken() && !S.me){ await loginAs(b.dataset.id); return true; }
   if(a === "mdays"){ d.move_days = num(b.dataset.k); d.move_unit = "w"; d.move_customTxt = ""; const mf = moveFields(d); if(mf.move_range){ d.expected_move = mf.expected_move; d.horizon_months = mf.horizon_months; } render(); return true; }
@@ -2151,7 +2191,7 @@ document.addEventListener("click", async e => {
   if(a === "new-round"){ S.route = {name:"home"}; S.draft = {}; S.err = {}; render(); const c = document.getElementById("new-round-card"); if(c) c.scrollIntoView({block:"start"}); else window.scrollTo(0,0); return; }
   if(a === "go"){ S.route = {name:b.dataset.route}; S.draft = {}; S.err = {}; render(); window.scrollTo(0,0); return; }
   if(a === "open"){ S.route = {name:"round", id:b.dataset.id, tab:"rounds"}; S.draft = {}; S.err = {}; render(); window.scrollTo(0,0); return; }
-  if(a === "logout"){ store.set("tarazu.me", null); store.set("tarazu.token", null); S.me = null; subscribeClient(null); S.route = {name:"home"}; S.draft = {}; render(); return; }
+  if(a === "logout"){ serverSignOut(store.get("tarazu.token")); store.set("tarazu.me", null); store.set("tarazu.token", null); S.me = null; subscribeClient(null); S.route = {name:"home"}; S.draft = {}; render(); return; }
   if(a === "pick-login"){ S.draft.loginId = b.dataset.id; S.err.login = ""; render(); return; }
   if(a === "refresh-market"){ refreshMarket(true); return; }
   if(a === "push"){ enablePush(); return; }
@@ -2214,12 +2254,15 @@ document.addEventListener("change", async e => {
   if(t.id === "login-client"){ S.draft.loginClient = t.value; S.draft.loginId = null; store.set("tarazu.loginClient", t.value); render(); return; }
   if(t.id === "m-filter"){ d.mFilter = t.value; render(); return; }
   if(t.dataset.flag){ d.rd = d.rd || {}; d.rd.flags = {...(d.rd.flags||{}), [t.dataset.flag]: t.checked}; return; }
+  if(t.dataset.uu && t.dataset.k === "email"){ const v = t.value.trim();
+    if(v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ toast("Enter a valid email address"); return; }
+    save("users/"+t.dataset.uu, {email: v}, true).then(() => toast(v ? "Email saved" : "Email removed")).catch(err => toast(err.message||"Could not save")); return; }
   if(t.dataset.uu && t.dataset.k === "phone"){ const raw = t.value.trim(), ph = normPhone(raw);
     if(raw && !/^[6-9]\d{9}$/.test(ph)){ toast("Enter a 10-digit Indian mobile number"); return; }
     const dup = ph && S.users.find(x => x.id !== t.dataset.uu && x.active !== false && normPhone(x.phone) === ph);
     if(dup){ toast("That number already belongs to " + dup.name); return; }
     save("users/"+t.dataset.uu, {phone: ph}, true).then(() => toast(ph ? "Number saved" : "Number removed")).catch(err => toast(err.message||"Could not save")); return; }
-  if(t.dataset.uu){ const v = t.value.trim(); if(t.dataset.k === "name" && !v) return; if(t.dataset.k === "pin" && !/^\d{4,6}$/.test(v)){ toast("PIN must be 4 to 6 digits"); return; } save("users/"+t.dataset.uu, {[t.dataset.k]: v}, true).then(() => toast("Saved")).catch(err => toast(err.message||"Could not save")); return; }
+  if(t.dataset.uu){ const v = t.value.trim(); if(t.dataset.k === "name" && !v) return; if(t.dataset.k === "pin" && v === "") return; if(t.dataset.k === "pin" && !/^\d{4,6}$/.test(v)){ toast("PIN must be 4 to 6 digits"); return; } save("users/"+t.dataset.uu, {[t.dataset.k]: v}, true).then(() => toast("Saved")).catch(err => toast(err.message||"Could not save")); return; }
   if(t.dataset.millpct){ const m = S.mills.find(x => x.id === t.dataset.millpct); if(!m) return; const raw = t.value.trim(), bq = balQuota(m);
     if(raw !== "" && !bq){ toast("Enter stock and quota first: there is no balance quota to take a % of"); return; }
     const qv = raw === "" ? null : up10(bq * Math.min(100, Math.max(0, num(raw.replace(/[^0-9.]/g, "")))) / 100, bq);
@@ -2255,7 +2298,12 @@ document.addEventListener("submit", async e => {
   if(f.id === "phone-form"){ const ph = normPhone($("#ph-num").value), pin = $("#ph-pin").value.trim(); S.draft.ph = $("#ph-num").value;
     if(ph.length !== 10){ S.err.login = "Enter your 10-digit mobile number."; render(); return; }
     let u = null, why = "";
-    if(HOSTED){ try{ const j = await S.db._call("login_phone", {phone:ph, pin}); store.set("tarazu.token", j.token); await S.db._resync(); u = S.users.find(x => x.id === j.user_id) || null; }catch(err){ why = err.message || ""; } }
+    if(HOSTED){ try{
+        const otpEl = $("#ph-otp"), otp = otpEl ? otpEl.value.replace(/\D/g,"") : "";
+        const usePin = pin || (S.draft.otpFor === ph ? S.draft.otpPin : "");
+        const j = await S.db._call("login_phone", otp ? {phone:ph, pin:usePin, otp} : {phone:ph, pin:usePin});
+        if(j.otp_needed){ S.draft.otpFor = ph; S.draft.otpPin = usePin; S.draft.otpSentTo = j.sent_to || []; S.err.login = ""; render(); setTimeout(() => { const pe = $("#ph-pin"); if(pe) pe.value = usePin; const oe = $("#ph-otp"); if(oe) oe.focus(); }, 0); return; }
+        S.draft.otpPin = null; store.set("tarazu.token", j.token); await S.db._resync(); u = S.users.find(x => x.id === j.user_id) || null; }catch(err){ why = err.message || ""; } }
     else { u = S.users.find(x => x.active !== false && normPhone(x.phone) === ph && String(x.pin) === pin) || null; if(!u) why = "That number and PIN do not match."; }
     if(u) await finishLogin(u); else { S.err.login = why || "That number and PIN do not match."; render(); } return; }
   if(f.id === "outlook-form") return submitOutlook();

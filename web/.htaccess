@@ -1,26 +1,41 @@
 DirectoryIndex index.html
 Options -Indexes
 RewriteEngine On
+
+# HTTPS only
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
 # tarazu.live layout: /nirani/ is the Nirani app (same files, same server)
 RewriteRule ^nirani$ nirani/ [R=301,L]
 RewriteRule ^nirani/$ index.html [L]
 RewriteRule ^nirani/(.+)$ $1 [L]
+
+# Report PDFs are served only through api.php?op=file with a signed, short-lived link
+RewriteRule ^files(/|$) - [F,L]
 RewriteRule ^ - [L]
-<FilesMatch "^(config\.php|seed\.json|.*\.sqlite.*)$">
+
+# Never served: server config, seed data, databases, backups, notes, repo and editor files
+<FilesMatch "^(config\.php|seed\.json|.*\.sqlite.*|.*\.(bak|enc|gz|log|md|sh|yml|yaml|lock)|\.cpanel\.yml|\.git.*)$">
   Require all denied
 </FilesMatch>
+RedirectMatch 404 /\.git
+
 <IfModule mod_headers.c>
-  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest)$">
+  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest|privacy\.html|delete-account\.html)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
-</IfModule>
-AddType application/manifest+json .webmanifest
-<IfModule mod_headers.c>
-  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set X-Frame-Options "DENY"
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
-  Header always set Permissions-Policy "microphone=(self), camera=(), geolocation=()"
+  Header always set Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  # The page is one file with inline script, so 'unsafe-inline' stays for scripts; everything else is locked down:
+  # it may only talk to this server, load fonts from Google Fonts, and cannot be framed or post forms elsewhere.
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
 </IfModule>
+AddType application/manifest+json .webmanifest
 
 # php -- BEGIN cPanel-generated handler, do not edit
 # Set the “ea-php84” package as the default “PHP” programming language.

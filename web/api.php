@@ -6,7 +6,22 @@ if (!defined('TARAZU_LIB')) {
   header('Content-Type: application/json; charset=utf-8');
   header('Cache-Control: no-store');
   header('X-Content-Type-Options: nosniff');
+  header('Referrer-Policy: no-referrer');
+  /* The iOS and Android apps load the screens from inside the app (origin capacitor://localhost or https://localhost)
+     and call this API across origins. Only those two origins are allowed; browsers on any other site are refused. */
+  $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+  if (in_array($origin, ['capacitor://localhost', 'https://localhost', 'ionic://localhost'], true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+    header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-Token, Authorization, X-Tarazu-Client');
+    header('Access-Control-Expose-Headers: X-Tarazu-Token');
+    header('Access-Control-Max-Age: 600');
+  }
+  if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') { http_response_code(204); exit; }
 }
+if (!defined('SESSION_IDLE_DAYS')) define('SESSION_IDLE_DAYS', 30);
+if (!defined('SESSION_MAX_DAYS')) define('SESSION_MAX_DAYS', 90);
 
 $op = $_GET['op'] ?? '';
 if (!defined('N8N_BASE')) define('N8N_BASE', 'https://hitarthuppal1.app.n8n.cloud');
@@ -32,7 +47,17 @@ function db(): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS subs(endpoint TEXT PRIMARY KEY, user_id TEXT, data TEXT, ua TEXT, created REAL)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS fails(k TEXT PRIMARY KEY, n INTEGER, until REAL)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS inbox(id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint TEXT, title TEXT, body TEXT, url TEXT, created REAL, delivered INTEGER DEFAULT 0)');
+  /* security tables: server-side sessions (token stored only as a hash), audit trail, one-time codes, native push tokens, rate counters */
+  $pdo->exec('CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE, user_id TEXT, via_master TEXT, created REAL, last_seen REAL, expires REAL, revoked REAL, ip TEXT, client TEXT)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS i_sess_user ON sessions(user_id)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, user_id TEXT, via_master TEXT, client_id TEXT, action TEXT, target TEXT, meta TEXT, ip TEXT)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS i_audit_client ON audit(client_id, id)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS otp(phone TEXT PRIMARY KEY, code_hash TEXT, expires REAL, attempts INTEGER, sent REAL)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS native_push(token TEXT PRIMARY KEY, user_id TEXT, platform TEXT, created REAL)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS rate(k TEXT PRIMARY KEY, n INTEGER, window_start REAL)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)');
   seed($pdo);
+  migrate_pins($pdo);
   return $pdo;
 }
 function seed(PDO $pdo): void {
@@ -51,26 +76,100 @@ function get_doc(string $p): ?array { $st = db()->prepare('SELECT data FROM docs
 function put_doc(string $p, $d): void { db()->prepare('INSERT OR REPLACE INTO docs(path,parent,data,updated,deleted) VALUES(?,?,?,?,0)')->execute([$p, parent_of($p), json_encode($d, JSON_UNESCAPED_UNICODE), microtime(true)]); }
 function del_doc(string $p): void { db()->prepare('UPDATE docs SET deleted=1, data=NULL, updated=? WHERE path=?')->execute([microtime(true), $p]); }
 
-/* sign-in tokens */
+/* sign-in sessions.
+   A token is 32 random bytes, handed to the device once. The server keeps only its SHA-256 hash, so a copy of the
+   database cannot be used to sign in. Sessions expire after SESSION_IDLE_DAYS without use and SESSION_MAX_DAYS in all,
+   and can be revoked (sign out, sign out everywhere, PIN or role change, owner or master action).
+   A session opened by a master admin on someone else's account lasts 12 hours and is marked with the master's id. */
 function sign(string $s): string { return hash_hmac('sha256', $s, APP_SECRET); }
-function make_token(string $uid): string { $p = $uid . '|' . (time() + 60 * 60 * 24 * 30); return base64_encode($p) . '.' . sign($p); }
-/* a session opened by master admin on someone else's account: 12 hours, marked with the master's id */
-function make_token_as(string $uid, string $master): string { $p = $uid . '|' . (time() + 60 * 60 * 12) . '|' . $master; return base64_encode($p) . '.' . sign($p); }
+function client_ip(): string { return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64); }
+function client_label(): string { return substr((string)($_SERVER['HTTP_X_TARAZU_CLIENT'] ?? 'web'), 0, 40); }
+function new_session(string $uid, ?string $via_master = null): string {
+  $raw = 'tz1_' . bin2hex(random_bytes(32)); $now = microtime(true);
+  $life = $via_master ? 12 * 3600 : SESSION_MAX_DAYS * 86400;
+  db()->prepare('INSERT INTO sessions(id,token_hash,user_id,via_master,created,last_seen,expires,revoked,ip,client) VALUES(?,?,?,?,?,?,?,NULL,?,?)')
+    ->execute([bin2hex(random_bytes(8)), hash('sha256', $raw), $uid, $via_master, $now, $now, $now + $life, client_ip(), client_label()]);
+  if (!defined('TARAZU_LIB')) header('X-Tarazu-Token: ' . $raw); // the phone apps keep it in Keychain / Keystore
+  return $raw;
+}
+function make_token(string $uid): string { return new_session($uid); }
+function make_token_as(string $uid, string $master): string { return new_session($uid, $master); }
+function request_token(): string {
+  $t = (string)($_SERVER['HTTP_X_TOKEN'] ?? '');
+  if ($t === '' && preg_match('#^Bearer\s+(\S+)$#', (string)($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''), $m)) $t = $m[1];
+  return $t;
+}
+function current_session(): ?array {
+  static $s = false; if ($s !== false) return $s; $s = null;
+  $t = request_token(); if (strncmp($t, 'tz1_', 4) !== 0 || strlen($t) !== 68) return null; // old-style tokens are no longer accepted
+  $st = db()->prepare('SELECT * FROM sessions WHERE token_hash=?'); $st->execute([hash('sha256', $t)]); $r = $st->fetch(PDO::FETCH_ASSOC);
+  $now = microtime(true);
+  if (!$r || $r['revoked'] !== null || (float)$r['expires'] < $now || (float)$r['last_seen'] < $now - SESSION_IDLE_DAYS * 86400) return null;
+  if ((float)$r['last_seen'] < $now - 300) db()->prepare('UPDATE sessions SET last_seen=?, ip=? WHERE id=?')->execute([$now, client_ip(), $r['id']]);
+  $s = $r; return $s;
+}
+function revoke_sessions(string $uid, ?string $except_id = null): int {
+  $st = db()->prepare('UPDATE sessions SET revoked=? WHERE user_id=? AND revoked IS NULL AND id IS NOT ?'); $st->execute([microtime(true), $uid, $except_id]);
+  db()->prepare('DELETE FROM subs WHERE user_id=?')->execute([$uid]);
+  db()->prepare('DELETE FROM native_push WHERE user_id=?')->execute([$uid]);
+  return $st->rowCount();
+}
 function me(): ?array {
   static $u = false; if ($u !== false) return $u; $u = null;
-  $t = $_SERVER['HTTP_X_TOKEN'] ?? ''; if ($t === '' || strpos($t, '.') === false) return null;
-  [$b, $sig] = explode('.', $t, 2); $p = (string)base64_decode($b, true);
-  if (!hash_equals(sign($p), $sig)) return null;
-  $parts = explode('|', $p); if ((count($parts) !== 2 && count($parts) !== 3) || (int)$parts[1] < time()) return null;
-  $d = get_doc('users/' . $parts[0]); if (!$d || ($d['active'] ?? true) === false) return null;
-  if (count($parts) === 3) { $m = get_doc('users/' . $parts[2]); if (!$m || ($m['role'] ?? '') !== 'master') return null; $d['_via_master'] = $parts[2]; }
-  $d['id'] = $parts[0]; $u = $d; return $u;
+  $s = current_session(); if (!$s) return null;
+  $d = get_doc('users/' . $s['user_id']); if (!$d || ($d['active'] ?? true) === false) return null;
+  if ($s['via_master']) { $m = get_doc('users/' . $s['via_master']); if (!$m || ($m['role'] ?? '') !== 'master' || ($m['active'] ?? true) === false) return null; $d['_via_master'] = $s['via_master']; }
+  $d['id'] = $s['user_id']; $d['_session'] = $s['id']; $u = $d; return $u;
+}
+
+/* PINs are stored only as password hashes (pin_hash). Plain PINs from before are converted once, on first start. */
+function pin_hash_of(string $pin): string { return password_hash($pin, PASSWORD_DEFAULT); }
+function pin_ok(?array $d, string $pin): bool {
+  if (!$d || $pin === '') { password_verify($pin, '$2y$10$Rg4bGjHC5eivuVCJPoYm9uIzZHchhZ6f.XTRAqyn3xOQp2tXzawbq'); return false; } // same time either way
+  if (!empty($d['pin_hash'])) return password_verify($pin, (string)$d['pin_hash']);
+  return isset($d['pin']) && hash_equals((string)$d['pin'], $pin);
+}
+function protect_pin(array $d): array {
+  if (array_key_exists('pin', $d)) {
+    $p = (string)$d['pin']; unset($d['pin']);
+    if ($p !== '') { $d['pin_hash'] = pin_hash_of($p); $d['pin_default'] = in_array($p, ['0000', '1234', '1111'], true); $d['pin_set_at'] = gmdate('c'); }
+  }
+  return $d;
+}
+function migrate_pins(PDO $pdo): void {
+  $st = $pdo->prepare('SELECT v FROM meta WHERE k=?'); $st->execute(['pins_hashed']); if ($st->fetchColumn()) return;
+  $rows = $pdo->query("SELECT path, data FROM docs WHERE parent='users' AND deleted=0")->fetchAll(PDO::FETCH_ASSOC);
+  $up = $pdo->prepare('UPDATE docs SET data=?, updated=? WHERE path=?'); $pdo->beginTransaction();
+  foreach ($rows as $r) { $o = json_decode((string)$r['data'], true); if (!is_array($o) || !array_key_exists('pin', $o)) continue;
+    $up->execute([json_encode(protect_pin($o), JSON_UNESCAPED_UNICODE), microtime(true), $r['path']]); }
+  $pdo->prepare('INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)')->execute(['pins_hashed', gmdate('c')]); $pdo->commit();
+}
+
+/* audit trail: append-only record of security-relevant actions */
+function audit(?array $u, string $action, string $target = '', array $meta = []): void {
+  try {
+    $cid = $u['client_id'] ?? ($meta['client_id'] ?? null);
+    db()->prepare('INSERT INTO audit(at,user_id,via_master,client_id,action,target,meta,ip) VALUES(?,?,?,?,?,?,?,?)')
+      ->execute([microtime(true), $u['id'] ?? ($meta['user_id'] ?? null), $u['_via_master'] ?? null, $cid, $action, substr($target, 0, 200), $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null, client_ip()]);
+  } catch (Throwable $e) { error_log('tarazu audit: ' . $e->getMessage()); }
+}
+
+/* simple fixed-window rate limit; returns false once the limit is hit */
+function rate_ok(string $k, int $max, int $window_s): bool {
+  $now = microtime(true); $st = db()->prepare('SELECT n, window_start FROM rate WHERE k=?'); $st->execute([$k]); $r = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$r || (float)$r['window_start'] < $now - $window_s) { db()->prepare('INSERT OR REPLACE INTO rate(k,n,window_start) VALUES(?,1,?)')->execute([$k, $now]); return true; }
+  if ((int)$r['n'] >= $max) return false;
+  db()->prepare('UPDATE rate SET n=n+1 WHERE k=?')->execute([$k]); return true;
 }
 
 /* who may read and write what */
 function can_read(?array $u, string $p, array $d): bool {
   $par = parent_of($p);
-  if (!$u) return in_array($par, ['users', 'clients'], true) || $p === 'config/market' || $p === 'config/auth';
+  if (!$u) {
+    if ($p === 'config/auth') return true;
+    if ((get_doc('config/auth')['phone_required'] ?? false) === true) return $par === 'clients';
+    return in_array($par, ['users', 'clients'], true) || $p === 'config/market';
+  }
   if ($u['role'] === 'master') return true;
   $cid = $u['client_id'] ?? '';
   if ($u['role'] === 'panelist' && preg_match('#^clients/[^/]+/(rviews|outlooks|comments|pvotes)/([^/]+)$#', $p, $m)) return substr($m[2], -strlen('__' . $u['id'])) === '__' . $u['id'] && strpos($p, 'clients/' . $cid . '/') === 0;
@@ -80,9 +179,12 @@ function can_read(?array $u, string $p, array $d): bool {
   return strpos($p, 'clients/' . $cid . '/') === 0;
 }
 function shape(?array $u, string $p, array $d): array {
+  if (parent_of($p) === 'clients' && !$u) return array_intersect_key($d, array_flip(['name', 'logo', 'tagline']));
   if (parent_of($p) !== 'users') return $d;
-  $pin_ok = $u && ($u['role'] === 'master' || ($u['role'] === 'owner' && ($d['client_id'] ?? '') === ($u['client_id'] ?? '') && ($d['role'] ?? '') !== 'master'));
-  if (!$pin_ok) { unset($d['pin']); if (!$u || $u['role'] !== 'master' && ($u['id'] ?? '') !== substr($p, 6)) unset($d['phone']); }
+  $mgr = $u && ($u['role'] === 'master' || ($u['role'] === 'owner' && ($d['client_id'] ?? '') === ($u['client_id'] ?? '') && ($d['role'] ?? '') !== 'master'));
+  $d['has_pin'] = !empty($d['pin_hash']) || !empty($d['pin']);
+  unset($d['pin'], $d['pin_hash']);
+  if (!$mgr) { unset($d['pin_default'], $d['pin_set_at']); if (!$u || $u['role'] !== 'master' && ($u['id'] ?? '') !== substr($p, 6)) unset($d['phone'], $d['email']); }
   if (!$u) $d = array_intersect_key($d, array_flip(['name', 'role', 'client_id', 'active']));
   return $d;
 }
@@ -186,7 +288,60 @@ function flush_pushes(): void {
       $code = send_push($ep);
       if ($code === 404 || $code === 410) db()->prepare('DELETE FROM subs WHERE endpoint=?')->execute([$ep]);
     }
+    /* phone apps: Firebase (Android) and Apple push (iOS) */
+    $st = db()->prepare('SELECT token, platform FROM native_push WHERE user_id=?'); $st->execute([$uid]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $n) {
+      try {
+        $gone = $n['platform'] === 'android' ? send_fcm($n['token'], $title, mb_substr($body, 0, 180), $url) : send_apns($n['token'], $title, mb_substr($body, 0, 180), $url);
+        if ($gone) db()->prepare('DELETE FROM native_push WHERE token=?')->execute([$n['token']]);
+      } catch (Throwable $e) { error_log('tarazu native push: ' . $e->getMessage()); }
+    }
   }
+}
+function route_of(string $url): string { return ltrim(preg_replace('#^\./#', '', $url), '/'); }
+/* Firebase Cloud Messaging HTTP v1. FCM_SERVICE_ACCOUNT = path (outside the web root) to the service-account JSON. Returns true if the token is dead. */
+function send_fcm(string $token, string $title, string $body, string $url): bool {
+  if (!defined('FCM_SERVICE_ACCOUNT') || !is_file(FCM_SERVICE_ACCOUNT)) return false;
+  $sa = json_decode((string)file_get_contents(FCM_SERVICE_ACCOUNT), true); if (!$sa) return false;
+  $at = fcm_access_token($sa); if (!$at) return false;
+  $msg = ['message' => ['token' => $token, 'notification' => ['title' => $title, 'body' => $body],
+    'data' => ['route' => route_of($url)], 'android' => ['priority' => 'HIGH', 'notification' => ['channel_id' => 'tarazu', 'tag' => 'tarazu']]]];
+  $ch = curl_init('https://fcm.googleapis.com/v1/projects/' . rawurlencode($sa['project_id']) . '/messages:send');
+  curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($msg), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $at]]);
+  $res = (string)curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+  return $code === 404 || ($code === 400 && strpos($res, 'INVALID_ARGUMENT') !== false && strpos($res, 'token') !== false);
+}
+function fcm_access_token(array $sa): ?string {
+  $st = db()->prepare('SELECT v FROM meta WHERE k=?'); $st->execute(['fcm_token']); $c = json_decode((string)$st->fetchColumn(), true);
+  if ($c && ($c['exp'] ?? 0) > time() + 120) return $c['t'];
+  $now = time(); $h = b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+  $c2 = b64u(json_encode(['iss' => $sa['client_email'], 'scope' => 'https://www.googleapis.com/auth/firebase.messaging', 'aud' => 'https://oauth2.googleapis.com/token', 'iat' => $now, 'exp' => $now + 3600]));
+  if (!openssl_sign("$h.$c2", $sig, $sa['private_key'], OPENSSL_ALGO_SHA256)) return null;
+  $ch = curl_init('https://oauth2.googleapis.com/token');
+  curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => http_build_query(['grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => "$h.$c2." . b64u($sig)]), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8]);
+  $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
+  if (empty($j['access_token'])) return null;
+  db()->prepare('INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)')->execute(['fcm_token', json_encode(['t' => $j['access_token'], 'exp' => $now + (int)($j['expires_in'] ?? 3600)])]);
+  return $j['access_token'];
+}
+/* Apple Push Notification service over HTTP/2 with a token key (.p8). APNS_KEY_FILE, APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC (bundle id). */
+function send_apns(string $token, string $title, string $body, string $url): bool {
+  if (!defined('APNS_KEY_FILE') || !is_file(APNS_KEY_FILE) || !defined('APNS_KEY_ID') || !defined('APNS_TEAM_ID')) return false;
+  $st = db()->prepare('SELECT v FROM meta WHERE k=?'); $st->execute(['apns_jwt']); $c = json_decode((string)$st->fetchColumn(), true);
+  if (!$c || ($c['iat'] ?? 0) < time() - 3000) {
+    $h = b64u(json_encode(['alg' => 'ES256', 'kid' => APNS_KEY_ID])); $cl = b64u(json_encode(['iss' => APNS_TEAM_ID, 'iat' => time()]));
+    openssl_sign("$h.$cl", $der, (string)file_get_contents(APNS_KEY_FILE), OPENSSL_ALGO_SHA256);
+    $c = ['t' => "$h.$cl." . b64u(der_to_raw($der)), 'iat' => time()];
+    db()->prepare('INSERT OR REPLACE INTO meta(k,v) VALUES(?,?)')->execute(['apns_jwt', json_encode($c)]);
+  }
+  $host = defined('APNS_SANDBOX') && APNS_SANDBOX ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com';
+  $ch = curl_init($host . '/3/device/' . $token);
+  curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_0, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8,
+    CURLOPT_POSTFIELDS => json_encode(['aps' => ['alert' => ['title' => $title, 'body' => $body], 'sound' => 'default'], 'route' => route_of($url)]),
+    CURLOPT_HTTPHEADER => ['authorization: bearer ' . $c['t'], 'apns-topic: ' . (defined('APNS_TOPIC') ? APNS_TOPIC : 'live.tarazu.app'), 'apns-push-type: alert', 'apns-priority: 10']]);
+  curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+  return $code === 410 || $code === 400;
 }
 
 /* scheduled job: noon outlook prompt (Mon-Sat), closing reminder, owner's 3 PM digest. Days run 3 AM to 3 AM, India time. */
@@ -367,6 +522,46 @@ function demo_tick(): void {
 }
 
 /* routes */
+
+/* sign-in lockout helpers (shared by PIN, phone and code checks) */
+function login_guard(array $keys): void {
+  $now = microtime(true);
+  foreach ($keys as $k => $lim) { $st = db()->prepare('SELECT until FROM fails WHERE k=?'); $st->execute([$k]); $x = (float)$st->fetchColumn();
+    if ($x > $now) fail('Too many wrong attempts. Try again in ' . max(1, (int)ceil(($x - $now) / 60)) . ' minutes.', 429); }
+}
+function login_failed(array $keys): void {
+  $now = microtime(true);
+  foreach ($keys as $k => [$max, $secs]) {
+    $st = db()->prepare('SELECT n FROM fails WHERE k=?'); $st->execute([$k]); $n = (int)$st->fetchColumn() + 1;
+    db()->prepare('INSERT OR REPLACE INTO fails(k,n,until) VALUES(?,?,?)')->execute([$k, $n >= $max ? 0 : $n, $n >= $max ? $now + $secs : 0]);
+  }
+}
+function can_manage_user(array $u, string $uid): bool {
+  if ($u['role'] === 'master') return true;
+  $d = get_doc('users/' . $uid);
+  return $u['role'] === 'owner' && $d && ($d['client_id'] ?? '') === ($u['client_id'] ?? '') && ($d['role'] ?? '') !== 'master';
+}
+function mask_email(string $e): string { [$a, $b] = array_pad(explode('@', $e, 2), 2, ''); return substr($a, 0, 2) . str_repeat('•', max(1, strlen($a) - 2)) . '@' . $b; }
+/* one-time code delivery: email through the server's own mail (from OTP_FROM), and WhatsApp through n8n when OTP_WEBHOOK is set */
+function send_otp(array $d, string $ph, string $code): array {
+  $sent = [];
+  $email = trim((string)($d['email'] ?? ''));
+  if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $from = defined('OTP_FROM') ? OTP_FROM : 'no-reply@tarazu.live';
+    $body = "Your Tarazu sign-in code is $code\r\n\r\nIt works for 5 minutes. If you did not try to sign in, tell your administrator.\r\n\r\nTarazu, Sugar Sale Intelligence System, powered by AgriMandi";
+    $hdr = "From: Tarazu <$from>\r\nReply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Mailer: Tarazu";
+    if (@mail($email, "Tarazu sign-in code: $code", $body, $hdr, '-f' . $from)) $sent[] = 'email ' . mask_email($email);
+  }
+  if (defined('OTP_WEBHOOK') && OTP_WEBHOOK !== '' && function_exists('curl_init')) {
+    $ch = curl_init(OTP_WEBHOOK);
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['phone' => '91' . $ph, 'code' => $code, 'name' => $d['name'] ?? '']),
+      CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json'], n8n_auth_header()), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15]);
+    curl_exec($ch); if ((int)curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) $sent[] = 'WhatsApp ••••' . substr($ph, -4); curl_close($ch);
+  }
+  return $sent;
+}
+function n8n_auth_header(): array { return defined('N8N_KEY') && N8N_KEY !== '' ? ['X-Tarazu-Key: ' . N8N_KEY] : []; }
+
 if (!defined('TARAZU_LIB')) try {
   switch ($op) {
     case 'sync': {
@@ -378,56 +573,109 @@ if (!defined('TARAZU_LIB')) try {
         if ((int)$r['deleted'] === 1) { if ($since > 0) $docs[] = ['path' => $r['path'], 'deleted' => true]; continue; }
         $d = json_decode($r['data'], true) ?: []; $o = json_decode($r['data'], false);
         if (!can_read($u, $r['path'], $d)) continue;
-        $docs[] = ['path' => $r['path'], 'data' => parent_of($r['path']) === 'users' ? shape($u, $r['path'], $d) : $o];
+        $docs[] = ['path' => $r['path'], 'data' => (parent_of($r['path']) === 'users' || (!$u && parent_of($r['path']) === 'clients')) ? shape($u, $r['path'], $d) : $o];
       }
       out(['now' => $now, 'docs' => $docs, 'signed_in' => (bool)$u]);
     }
     case 'login': {
       $uid = (string)($in['user_id'] ?? ''); $pin = (string)($in['pin'] ?? '');
       if (!preg_match('#^[A-Za-z0-9_\-]{1,64}$#', $uid)) fail('Unknown user', 401);
+      $auth = get_doc('config/auth') ?? [];
+      if (($auth['phone_required'] ?? false) === true || ($auth['otp_required'] ?? false) === true) fail('Sign in with your mobile number.', 403);
       usleep(250000);
-      $now = microtime(true); $ip = substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64);
-      $keys = ['u:' . $uid => [5, 900], 'ip:' . $ip => [20, 900]];
-      foreach ($keys as $k => $lim) { $st = db()->prepare('SELECT until FROM fails WHERE k=?'); $st->execute([$k]); $u = (float)$st->fetchColumn();
-        if ($u > $now) fail('Too many wrong PINs. Try again in ' . max(1, (int)ceil(($u - $now) / 60)) . ' minutes.', 429); }
+      login_guard(['u:' . $uid => [5, 900], 'ip:' . client_ip() => [20, 900]]);
       $d = get_doc('users/' . $uid);
-      if ((get_doc('config/auth')['phone_required'] ?? false) === true) fail('Sign in with your mobile number.', 403);
-      if (!$d || ($d['active'] ?? true) === false || !hash_equals((string)($d['pin'] ?? ''), $pin)) {
-        foreach ($keys as $k => [$max, $secs]) {
-          $st = db()->prepare('SELECT n FROM fails WHERE k=?'); $st->execute([$k]); $n = (int)$st->fetchColumn() + 1;
-          db()->prepare('INSERT OR REPLACE INTO fails(k,n,until) VALUES(?,?,?)')->execute([$k, $n >= $max ? 0 : $n, $n >= $max ? $now + $secs : 0]);
-        }
+      if (!$d || ($d['active'] ?? true) === false || !pin_ok($d, $pin)) {
+        login_failed(['u:' . $uid => [5, 900], 'ip:' . client_ip() => [20, 900]]); audit(null, 'login_fail', $uid, ['user_id' => $uid, 'how' => 'pin']);
         fail('That PIN does not match.', 401);
       }
       db()->prepare('DELETE FROM fails WHERE k=?')->execute(['u:' . $uid]);
-      out(['token' => make_token($uid), 'role' => $d['role'] ?? '']);
+      if (empty($d['pin_hash'])) put_doc('users/' . $uid, protect_pin($d)); // old plain PIN: convert on first use
+      audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'login', $uid, ['how' => 'pin']);
+      out(['token' => make_token($uid), 'user_id' => $uid, 'role' => $d['role'] ?? '']);
     }
     case 'impersonate': {
       $u = me(); if (!$u || ($u['role'] ?? '') !== 'master' || isset($u['_via_master'])) fail('Only master admin can do this.', 403);
       $uid = (string)($in['user_id'] ?? ''); if (!preg_match('#^[A-Za-z0-9_\-]{1,64}$#', $uid)) fail('Unknown user', 404);
       $d = get_doc('users/' . $uid); if (!$d || ($d['active'] ?? true) === false) fail('Unknown user', 404);
+      audit($u, 'impersonate', $uid, ['client_id' => $d['client_id'] ?? null, 'as_role' => $d['role'] ?? '']);
       if (($d['role'] ?? '') === 'master') out(['token' => make_token($uid), 'role' => 'master']);
       out(['token' => make_token_as($uid, $u['id']), 'role' => $d['role'] ?? '', 'via_master' => true]);
     }
     case 'login_phone': {
-      $ph = norm_phone($in['phone'] ?? ''); $pin = (string)($in['pin'] ?? '');
+      /* mobile number + PIN; when config/auth.otp_required is on, also a 6-digit one-time code sent by email / WhatsApp */
+      $ph = norm_phone($in['phone'] ?? ''); $pin = (string)($in['pin'] ?? ''); $otp = preg_replace('#\D#', '', (string)($in['otp'] ?? ''));
       if (!preg_match('#^\d{10}$#', $ph)) fail('Enter your 10-digit mobile number.', 400);
       usleep(250000);
-      $now = microtime(true); $ip = substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64);
-      $keys = ['p:' . $ph => [5, 900], 'ip:' . $ip => [20, 900]];
-      foreach ($keys as $k => $lim) { $st = db()->prepare('SELECT until FROM fails WHERE k=?'); $st->execute([$k]); $x = (float)$st->fetchColumn();
-        if ($x > $now) fail('Too many wrong attempts. Try again in ' . max(1, (int)ceil(($x - $now) / 60)) . ' minutes.', 429); }
+      $keys = ['p:' . $ph => [5, 900], 'ip:' . client_ip() => [20, 900]];
+      login_guard($keys);
       $uid = null; $d = null;
       foreach (docs_under('users') as $id => $doc) if (($doc['active'] ?? true) !== false && norm_phone($doc['phone'] ?? '') === $ph) { $uid = $id; $d = $doc; break; }
-      if (!$d || !hash_equals((string)($d['pin'] ?? ''), $pin)) {
-        foreach ($keys as $k => [$max, $secs]) {
-          $st = db()->prepare('SELECT n FROM fails WHERE k=?'); $st->execute([$k]); $n = (int)$st->fetchColumn() + 1;
-          db()->prepare('INSERT OR REPLACE INTO fails(k,n,until) VALUES(?,?,?)')->execute([$k, $n >= $max ? 0 : $n, $n >= $max ? $now + $secs : 0]);
-        }
+      if (!$d || !pin_ok($d, $pin)) {
+        login_failed($keys); audit(null, 'login_fail', 'phone:' . substr($ph, -4), ['user_id' => $uid, 'how' => 'phone']);
         fail('That number and PIN do not match.', 401);
       }
+      if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) === true) {
+        if ($otp === '') {
+          if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
+          $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+          $sent = send_otp($d, $ph, $code);
+          if (!$sent) fail('Your sign-in code could not be sent. Ask your administrator to add your email address.', 503);
+          db()->prepare('INSERT OR REPLACE INTO otp(phone,code_hash,expires,attempts,sent) VALUES(?,?,?,0,?)')->execute([$ph, hash_hmac('sha256', $ph . '|' . $code, APP_SECRET), microtime(true) + 300, microtime(true)]);
+          audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'otp_sent', $uid, ['to' => $sent]);
+          out(['otp_needed' => true, 'sent_to' => $sent]);
+        }
+        $st = db()->prepare('SELECT * FROM otp WHERE phone=?'); $st->execute([$ph]); $o = $st->fetch(PDO::FETCH_ASSOC);
+        $good = $o && (float)$o['expires'] > microtime(true) && (int)$o['attempts'] < 5 && hash_equals((string)$o['code_hash'], hash_hmac('sha256', $ph . '|' . $otp, APP_SECRET));
+        if (!$good) {
+          if ($o) db()->prepare('UPDATE otp SET attempts=attempts+1 WHERE phone=?')->execute([$ph]);
+          login_failed($keys); audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'login_fail', $uid, ['how' => 'otp']);
+          fail($o && (float)$o['expires'] <= microtime(true) ? 'That code has expired. Request a new one.' : 'That code does not match.', 401);
+        }
+        db()->prepare('DELETE FROM otp WHERE phone=?')->execute([$ph]);
+      }
       db()->prepare('DELETE FROM fails WHERE k=?')->execute(['p:' . $ph]);
+      if (empty($d['pin_hash'])) put_doc('users/' . $uid, protect_pin($d));
+      audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'login', $uid, ['how' => $otp !== '' ? 'phone+otp' : 'phone']);
       out(['token' => make_token($uid), 'user_id' => $uid, 'role' => $d['role'] ?? '']);
+    }
+    case 'logout': {
+      $u = me(); if ($u) { db()->prepare('UPDATE sessions SET revoked=? WHERE id=?')->execute([microtime(true), $u['_session']]); audit($u, 'logout'); }
+      if (!defined('TARAZU_LIB')) header('X-Tarazu-Token: revoked');
+      out(['ok' => true]);
+    }
+    case 'logout_all': {
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      $n = revoke_sessions($u['id'], $u['_session']); audit($u, 'logout_all', $u['id'], ['sessions' => $n]);
+      out(['ok' => true, 'signed_out' => $n]);
+    }
+    case 'sessions': {
+      /* own devices; owner sees their client's people; master sees everyone. Optional user_id. */
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      $uid = (string)($in['user_id'] ?? $u['id']);
+      if ($uid !== $u['id'] && !can_manage_user($u, $uid)) fail('You do not have permission to see this.', 403);
+      $st = db()->prepare('SELECT id, created, last_seen, expires, client, ip, via_master FROM sessions WHERE user_id=? AND revoked IS NULL AND expires>? ORDER BY last_seen DESC LIMIT 50');
+      $st->execute([$uid, microtime(true)]);
+      $rows = array_map(function ($r) use ($u) { $r['current'] = $r['id'] === ($u['_session'] ?? ''); $r['ip'] = preg_replace('#\.\d+$#', '.x', (string)$r['ip']); return $r; }, $st->fetchAll(PDO::FETCH_ASSOC));
+      out(['sessions' => $rows]);
+    }
+    case 'revoke_sessions': {
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      $uid = (string)($in['user_id'] ?? ''); $sid = (string)($in['session_id'] ?? '');
+      if ($uid !== $u['id'] && !can_manage_user($u, $uid)) fail('You do not have permission to do this.', 403);
+      if ($sid !== '') { $st = db()->prepare('UPDATE sessions SET revoked=? WHERE id=? AND user_id=? AND revoked IS NULL'); $st->execute([microtime(true), $sid, $uid]); $n = $st->rowCount(); }
+      else $n = revoke_sessions($uid, $uid === $u['id'] ? $u['_session'] : null);
+      audit($u, 'revoke_sessions', $uid, ['sessions' => $n, 'client_id' => get_doc('users/' . $uid)['client_id'] ?? null]);
+      out(['ok' => true, 'signed_out' => $n]);
+    }
+    case 'audit_list': {
+      $u = me(); if (!$u || !in_array($u['role'], ['master', 'owner'], true)) fail('You do not have permission to see this.', 403);
+      $before = (int)($in['before'] ?? PHP_INT_MAX); $lim = max(1, min(200, (int)($in['limit'] ?? 100)));
+      if ($u['role'] === 'master') { $st = db()->prepare('SELECT * FROM audit WHERE id<? ORDER BY id DESC LIMIT ' . $lim); $st->execute([$before]); }
+      else { $st = db()->prepare('SELECT * FROM audit WHERE id<? AND client_id=? ORDER BY id DESC LIMIT ' . $lim); $st->execute([$before, $u['client_id'] ?? '']); }
+      $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+      foreach ($rows as &$r) { $r['meta'] = $r['meta'] ? json_decode($r['meta'], true) : null; $r['ip'] = preg_replace('#\.\d+$#', '.x', (string)$r['ip']); }
+      out(['entries' => $rows]);
     }
     case 'schedule_preview': {
       $u = me(); if (!$u || $u['role'] !== 'master') fail('Only master admins can do this.', 403);
@@ -441,13 +689,18 @@ if (!defined('TARAZU_LIB')) try {
       $new = null;
       if ($op !== 'delete') { $data = $in['data'] ?? null; if (!is_array($data)) fail('Bad data'); $new = $op === 'update' ? array_merge($old ?? [], $data) : $data; }
       if (!can_write($u, $p, $new, $old)) fail('You do not have permission to change this.', 403);
-      if (parent_of($p) === 'users' && $u['role'] !== 'master' && isset($new['pin']) && !preg_match('#^\d{4,6}$#', (string)$new['pin'])) fail('PIN must be 4 to 6 digits');
+      $is_user = parent_of($p) === 'users';
+      if ($is_user && isset($in['data']['pin']) && (string)$in['data']['pin'] !== '' && !preg_match('#^\d{4,6}$#', (string)$in['data']['pin'])) fail('PIN must be 4 to 6 digits');
       if (parent_of($p) === 'users' && is_array($new) && ($new['phone'] ?? '') !== '' && isset($in['data']['phone'])) {
         $ph = norm_phone($new['phone']); if (!preg_match('#^[6-9]\d{9}$#', $ph)) fail('Enter a 10-digit Indian mobile number.');
         foreach (docs_under('users') as $id => $doc) if ('users/' . $id !== $p && ($doc['active'] ?? true) !== false && norm_phone($doc['phone'] ?? '') === $ph) fail('That number already belongs to ' . ($doc['name'] ?? 'someone else') . '.');
       }
-      if ($p === 'config/auth' && ($new['phone_required'] ?? false) === true) {
+      if ($p === 'config/auth' && (($new['phone_required'] ?? false) === true || ($new['otp_required'] ?? false) === true)) {
         $mine = get_doc('users/' . $u['id']); if (norm_phone($mine['phone'] ?? '') === '') fail('Add your own mobile number first, so you are not locked out.');
+      }
+      if ($p === 'config/auth' && ($new['otp_required'] ?? false) === true && !(($old['otp_required'] ?? false) === true)) {
+        $mine = get_doc('users/' . $u['id']);
+        if (!filter_var((string)($mine['email'] ?? ''), FILTER_VALIDATE_EMAIL) && !(defined('OTP_WEBHOOK') && OTP_WEBHOOK !== '')) fail('Add your own email address first, so your sign-in code can reach you.');
       }
       if ($op === 'delete') del_doc($p);
       else {
@@ -456,8 +709,32 @@ if (!defined('TARAZU_LIB')) try {
           $obj = $raw ? json_decode($raw, false) : new stdClass(); if (!is_object($obj)) $obj = new stdClass(); foreach ($dataObj as $k => $v) $obj->$k = $v; }
         else $obj = $dataObj;
         if (isset($u['_via_master']) && strpos($p, 'clients/') === 0 && is_object($obj)) $obj->acted_by_master = $u['_via_master'];
+        if ($is_user) {
+          /* the screens never see pin_hash, so keep it unless a new PIN was typed; computed fields are dropped */
+          $arr = json_decode(json_encode($obj), true) ?: [];
+          unset($arr['has_pin'], $arr['pin_hash']);
+          if (!isset($arr['pin']) || (string)$arr['pin'] === '') { unset($arr['pin']); foreach (['pin_hash', 'pin_default', 'pin_set_at'] as $k) if (isset($old[$k])) $arr[$k] = $old[$k]; }
+          $arr = protect_pin($arr);
+          $obj = (object)$arr;
+        }
         put_doc($p, $obj);
       }
+      if ($is_user) {
+        $uid = substr($p, 6); $chg = [];
+        if ($op === 'delete') $chg[] = 'deleted';
+        else {
+          if (isset($in['data']['pin']) && (string)$in['data']['pin'] !== '') $chg[] = 'pin';
+          foreach (['role', 'active', 'phone', 'client_id', 'email'] as $k) if (array_key_exists($k, $in['data'] ?? []) && ($old[$k] ?? null) !== ($new[$k] ?? null)) $chg[] = $k;
+          if (!$old) $chg[] = 'created';
+        }
+        if ($chg) {
+          audit($u, 'user_change', $uid, ['fields' => $chg, 'client_id' => $new['client_id'] ?? ($old['client_id'] ?? null)]);
+          /* a new PIN, a new role, deactivation or deletion signs that person out of every device */
+          if (array_intersect($chg, ['pin', 'role', 'active', 'deleted', 'client_id'])) revoke_sessions($uid, $uid === $u['id'] ? ($u['_session'] ?? null) : null);
+        }
+      } elseif ($op === 'delete') audit($u, 'delete', $p);
+      elseif (preg_match('#^clients/[^/]+/rounds/#', $p) && ($old['status'] ?? '') !== 'decided' && ($new['status'] ?? '') === 'decided') audit($u, 'round_decided', $p);
+      elseif (strpos($p, 'config/') === 0) audit($u, 'config_change', $p);
       after_write($u, $p, $new, $old);
       out(['ok' => true]);
     }
@@ -485,8 +762,8 @@ if (!defined('TARAZU_LIB')) try {
       $lk = fopen(DATA_DIR . '/market.lock', 'c'); if (!$lk || !flock($lk, LOCK_EX | LOCK_NB)) out(['ok' => true, 'skipped' => 'busy']);
       $nw = get_doc('config/news') ?? [];
       $body = json_encode(['news_flag_field' => substr((string)($nw['news_flag_field'] ?? ''), 0, 40), 'news_flag_value' => substr((string)($nw['news_flag_value'] ?? ''), 0, 40)]);
-      $ch = curl_init(N8N_BASE . '/webhook/tarazu-market-q8m4z2');
-      curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 90, CURLOPT_CONNECTTIMEOUT => 10]);
+      $ch = curl_init(N8N_BASE . '/webhook/' . (defined('HOOK_MARKET') ? HOOK_MARKET : 'tarazu-market-q8m4z2'));
+      curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json'], n8n_auth_header()), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 90, CURLOPT_CONNECTTIMEOUT => 10]);
       $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
       $j = is_string($raw) ? json_decode($raw, false) : null;
       if ($code !== 200 || !is_object($j) || empty($j->ok)) { flock($lk, LOCK_UN); fail('Live prices could not be refreshed right now. Showing the last saved copy.', 502); }
@@ -514,11 +791,63 @@ if (!defined('TARAZU_LIB')) try {
       $name = preg_replace('#[^A-Za-z0-9_\-.]#', '_', (string)($in['name'] ?? 'report.pdf'));
       if (!preg_match('#\.pdf$#i', $name)) fail('Only PDF files');
       $bin = base64_decode((string)($in['data'] ?? ''), true); if ($bin === false || substr($bin, 0, 4) !== '%PDF') fail('Not a PDF');
-      if (!is_dir(__DIR__ . '/files')) mkdir(__DIR__ . '/files', 0755, true);
-      file_put_contents(__DIR__ . '/files/' . $name, $bin);
-      out(['url' => 'files/' . $name]);
+      $dir = DATA_DIR . '/files'; if (!is_dir($dir)) mkdir($dir, 0750, true);
+      file_put_contents($dir . '/' . $name, $bin);
+      audit($u, 'upload', $name, ['bytes' => strlen($bin)]);
+      out(['url' => 'api.php?op=file&name=' . rawurlencode($name)]);
     }
-    case 'health': out(['ok' => true, 'php' => PHP_VERSION, 'sqlite' => extension_loaded('pdo_sqlite'), 'openssl' => extension_loaded('openssl'), 'curl' => extension_loaded('curl'), 'data_dir_outside_web' => strpos(DATA_DIR, __DIR__) !== 0]);
+    case 'file_link': {
+      /* report PDFs are not public: a signed-in owner, manager or master gets a link that works for 10 minutes */
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      if (!in_array($u['role'], ['master', 'owner', 'manager'], true)) fail('Reports are not available to your role.', 403);
+      $name = basename(preg_replace('#^.*[?&]name=#', '', rawurldecode((string)($in['name'] ?? ''))));
+      $name = preg_replace('#[^A-Za-z0-9_\-.]#', '_', $name);
+      if (!is_file(DATA_DIR . '/files/' . $name) && !is_file(__DIR__ . '/files/' . $name)) fail('That file is not on the server.', 404);
+      $exp = time() + 600;
+      out(['url' => 'api.php?op=file&name=' . rawurlencode($name) . '&exp=' . $exp . '&sig=' . sign('file|' . $name . '|' . $exp)]);
+    }
+    case 'file': {
+      $name = preg_replace('#[^A-Za-z0-9_\-.]#', '_', basename((string)($_GET['name'] ?? '')));
+      $exp = (int)($_GET['exp'] ?? 0); $sig = (string)($_GET['sig'] ?? '');
+      if ($exp < time() || !hash_equals(sign('file|' . $name . '|' . $exp), $sig)) { http_response_code(403); header('Content-Type: text/plain'); echo 'This link has expired. Open the report again from Tarazu.'; exit; }
+      $f = is_file(DATA_DIR . '/files/' . $name) ? DATA_DIR . '/files/' . $name : __DIR__ . '/files/' . $name;
+      if (!is_file($f)) { http_response_code(404); exit; }
+      header('Content-Type: application/pdf'); header('Content-Disposition: inline; filename="' . $name . '"'); header('Cache-Control: private, no-store');
+      header('Content-Length: ' . filesize($f)); readfile($f); exit;
+    }
+    case 'flow': {
+      /* The AI workflows (n8n) are reached only through here: signed-in users, per-person limits, and a shared key n8n checks.
+         The webhook addresses never appear in the page. */
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      $FLOWS = [
+        'Brief In'      => ['hook' => defined('HOOK_BRIEF') ? HOOK_BRIEF : 'tarazu-brief-q8m4z2',   'roles' => ['master', 'owner', 'manager'], 'max' => 30, 'audit' => true],
+        'Voice Note In' => ['hook' => defined('HOOK_VOICE') ? HOOK_VOICE : 'tarazu-voice-q8m4z2',   'roles' => ['master', 'owner', 'manager', 'panelist'], 'max' => 60, 'audit' => false],
+        'Report In'     => ['hook' => defined('HOOK_REPORT') ? HOOK_REPORT : 'tarazu-report-q8m4z2', 'roles' => ['master'], 'max' => 20, 'audit' => true],
+        'Market In'     => ['hook' => defined('HOOK_MARKET') ? HOOK_MARKET : 'tarazu-market-q8m4z2', 'roles' => ['master', 'owner', 'manager'], 'max' => 20, 'audit' => false],
+      ];
+      $t = (string)($_GET['trigger'] ?? ''); $f = $FLOWS[$t] ?? null; if (!$f) fail('Unknown workflow', 404);
+      if (!in_array($u['role'], $f['roles'], true)) fail('This is not available to your role.', 403);
+      if (strlen($RAW) > 20000000) fail('That file is too large.', 413);
+      if (!rate_ok('flow:' . $t . ':' . $u['id'], $f['max'], 3600)) fail('Too many requests in the last hour. Please wait a little.', 429);
+      if (function_exists('set_time_limit')) @set_time_limit(330);
+      ignore_user_abort(true);
+      $ch = curl_init(N8N_BASE . '/webhook/' . $f['hook']);
+      curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $RAW, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 320, CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json', 'X-Tarazu-User: ' . $u['id'], 'X-Tarazu-Client: ' . ($u['client_id'] ?? '')], n8n_auth_header())]);
+      $res = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+      if ($f['audit']) audit($u, 'ai_' . strtolower(strtok($t, ' ')), $t, ['status' => $code]);
+      if (!is_string($res) || $code < 200 || $code >= 300) fail('The workflow did not answer (' . $code . ').', 502);
+      http_response_code(200); echo $res; exit;
+    }
+    case 'push_native_register': {
+      $u = me(); if (!$u) fail('Please sign in again.', 401);
+      $pf = (string)($in['platform'] ?? ''); $tok = (string)($in['token'] ?? '');
+      if (!in_array($pf, ['ios', 'android'], true) || !preg_match('#^[A-Za-z0-9:_\-]{20,4096}$#', $tok)) fail('Bad push token');
+      db()->prepare('INSERT OR REPLACE INTO native_push(token,user_id,platform,created) VALUES(?,?,?,?)')->execute([$tok, $u['id'], $pf, microtime(true)]);
+      out(['ok' => true]);
+    }
+    case 'health': out(['ok' => true, 'sqlite' => extension_loaded('pdo_sqlite'), 'openssl' => extension_loaded('openssl'), 'curl' => extension_loaded('curl'), 'data_dir_outside_web' => strpos(DATA_DIR, __DIR__) !== 0,
+      'n8n_key' => defined('N8N_KEY') && N8N_KEY !== '', 'fcm' => defined('FCM_SERVICE_ACCOUNT') && is_file(FCM_SERVICE_ACCOUNT), 'apns' => defined('APNS_KEY_FILE') && is_file(APNS_KEY_FILE)]);
     default: fail('Unknown operation', 404);
   }
 } catch (Throwable $e) {
