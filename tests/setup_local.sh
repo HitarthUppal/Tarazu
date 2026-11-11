@@ -12,6 +12,8 @@ define('VAPID_PRIVATE_PEM', '');
 define('VAPID_SUBJECT', 'mailto:test@example.com');
 define('N8N_BASE', 'http://127.0.0.1:8098');
 define('N8N_KEY', 'test-shared-key');
+define('WA_API_KEY', 'test-wa-key');
+define('WA_ENDPOINT', 'http://127.0.0.1:8098/wa');
 define('BACKUP_KEY', '$(openssl rand -hex 32)');
 PHP
 python3 - $ROOT/www/seed.json <<'PY'
@@ -30,6 +32,11 @@ PY
 # fake n8n that checks the shared key
 cat > $ROOT/n8n.php <<'PHP'
 <?php header('Content-Type: application/json');
+if (str_starts_with($_SERVER['REQUEST_URI'], '/wa')) {   // stand-in for the Orai WhatsApp API
+  file_put_contents('/tmp/tz-local/wa.jsonl', json_encode(['key' => $_SERVER['HTTP_API_KEY'] ?? '', 'body' => json_decode(file_get_contents('php://input'), true)]) . "\n", FILE_APPEND);
+  if (is_file('/tmp/tz-local/wa-fail')) { http_response_code(500); echo '{"error":"down"}'; exit; }
+  echo '{"messages":[{"id":"wamid.test"}]}'; exit;
+}
 if (($_SERVER['HTTP_X_TAROZU_KEY'] ?? $_SERVER['HTTP_X_TARAZU_KEY'] ?? '') !== 'test-shared-key') { http_response_code(403); echo '{"error":"no key"}'; exit; }
 echo json_encode(['ok' => true, 'path' => $_SERVER['REQUEST_URI'], 'user' => $_SERVER['HTTP_X_TARAZU_USER'] ?? null]);
 PHP

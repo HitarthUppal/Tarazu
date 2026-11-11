@@ -46,9 +46,9 @@ rep('if(t.dataset.k === "pin" && !/^\\d{4,6}$/.test(v)){ toast("PIN must be 4 to
 # 4. One-time sign-in code: switch in the sign-in card, second step on the phone sign-in form.
 rep('''      <button class="switch" data-act="phone-required" aria-pressed="${req}">${S.draft.confirmPhoneReq ? "Tap to confirm" : req ? "On" : "Off"}</button></div>''',
 '''      <button class="switch" data-act="phone-required" aria-pressed="${req}">${S.draft.confirmPhoneReq ? "Tap to confirm" : req ? "On" : "Off"}</button></div>
-    <div class="toggle-row"><div><b>Require a one-time code</b><div class="small muted">${otpRequired() ? "On: after the PIN, a 6-digit code is sent to the person's email (and WhatsApp once connected). It works for 5 minutes." : "Off: number and PIN are enough. Turn this on once everyone has an email address saved."}</div></div>
+    <div class="toggle-row"><div><b>Require a one-time code</b><div class="small muted">${otpRequired() ? "On: after the PIN, a 6-digit code goes to the person's WhatsApp (and email, if saved). It works for 5 minutes." : "Off: mobile number and PIN are enough."}</div></div>
       <button class="switch" data-act="otp-required" aria-pressed="${otpRequired()}">${S.draft.confirmOtpReq ? "Tap to confirm" : otpRequired() ? "On" : "Off"}</button></div>
-    ${S.draft.confirmOtpReq ? `<div class="notice err small">${people.filter(u => !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(u.email||"")).length} people have no email address and will not be able to sign in until WhatsApp codes are connected. Tap again to switch it on.</div>` : ""}''')
+    ${S.draft.confirmOtpReq ? `<div class="notice err small">${missing ? `<b>${missing} ${missing===1?"person has":"people have"} no mobile number</b> and will not get a code. ` : ""}Codes go on WhatsApp to each person's number. Tap again to switch it on.</div>` : ""}''')
 rep('<th>Mobile number</th><th>PIN</th></tr></thead>', '<th>Mobile number</th><th>Email (for sign-in codes)</th><th>PIN</th></tr></thead>')
 rep('value="${esc(u.phone||"")}" style="width:140px;text-align:left"></td><td class="num">',
     'value="${esc(u.phone||"")}" style="width:140px;text-align:left"></td><td><input data-uu="${esc(u.id)}" data-k="email" type="email" inputmode="email" maxlength="120" placeholder="name@company.com" value="${esc(u.email||"")}" style="width:200px;text-align:left"></td><td class="num">')

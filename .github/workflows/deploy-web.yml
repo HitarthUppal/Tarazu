@@ -50,11 +50,13 @@ jobs:
           HOOK_VOICE: ${{ secrets.HOOK_VOICE }}
           HOOK_REPORT: ${{ secrets.HOOK_REPORT }}
           HOOK_MARKET: ${{ secrets.HOOK_MARKET }}
+          WA_API_KEY: ${{ secrets.WA_API_KEY }}
+          WA_TEMPLATE: ${{ secrets.WA_TEMPLATE }}
         run: |
           python3 - <<'PY'
           import os
           lines = ["<?php", "/* Written by the GitHub deploy workflow. Edit the repository secrets, not this file. */"]
-          for k in ["N8N_KEY","BACKUP_KEY","OTP_FROM","OTP_WEBHOOK","HOOK_BRIEF","HOOK_VOICE","HOOK_REPORT","HOOK_MARKET"]:
+          for k in ["N8N_KEY","BACKUP_KEY","OTP_FROM","OTP_WEBHOOK","HOOK_BRIEF","HOOK_VOICE","HOOK_REPORT","HOOK_MARKET","WA_API_KEY","WA_TEMPLATE"]:
               v = os.environ.get(k, "")
               if v:
                   assert "'" not in v and "\\" not in v, k

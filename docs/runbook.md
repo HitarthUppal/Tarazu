@@ -13,7 +13,9 @@
 | `N8N_KEY` | deploy-web → server | 32+ random characters. The same value goes into the key check in each Tarazu n8n workflow. |
 | `BACKUP_KEY` | deploy-web → server | 64 hex characters. **Also store offline** (password manager). Without it, backups cannot be restored. |
 | `OTP_FROM` | deploy-web → server | e.g. `no-reply@tarazu.live`. Create the mailbox in cPanel and turn on DKIM/SPF (Email Deliverability). |
-| `OTP_WEBHOOK` | deploy-web → server | Optional, later: n8n webhook that sends the WhatsApp sign-in code template. |
+| `WA_API_KEY` | deploy-web → server | Orai WhatsApp Cloud API key (the part after `Bearer `). Sign-in codes go on WhatsApp first. |
+| `WA_TEMPLATE` | deploy-web → server | Optional. Approved template name; default `chini_login` (body {{1}} = code, URL button {{1}} = code). |
+| `OTP_WEBHOOK` | deploy-web → server | Optional fallback: n8n webhook that sends the code. |
 | `HOOK_BRIEF`, `HOOK_VOICE`, `HOOK_REPORT`, `HOOK_MARKET` | deploy-web → server | New, unguessable webhook paths after rotation. Until set, the old paths are used. |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | android | Upload key. Play App Signing holds the real signing key. Keep a copy of the keystore offline. |
 | `GOOGLE_SERVICES_JSON` | android | Firebase → Project settings → Android app `live.tarazu.app`. |

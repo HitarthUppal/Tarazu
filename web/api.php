@@ -544,21 +544,42 @@ function can_manage_user(array $u, string $uid): bool {
   return $u['role'] === 'owner' && $d && ($d['client_id'] ?? '') === ($u['client_id'] ?? '') && ($d['role'] ?? '') !== 'master';
 }
 function mask_email(string $e): string { [$a, $b] = array_pad(explode('@', $e, 2), 2, ''); return substr($a, 0, 2) . str_repeat('•', max(1, strlen($a) - 2)) . '@' . $b; }
-/* one-time code delivery: email through the server's own mail (from OTP_FROM), and WhatsApp through n8n when OTP_WEBHOOK is set */
+/* one-time code delivery, in order: WhatsApp through the Orai Cloud API (WA_API_KEY), WhatsApp through n8n (OTP_WEBHOOK),
+   and email through the server's own mail (from OTP_FROM). Returns where the code went, masked. */
+function wa_configured(): bool { return (defined('WA_API_KEY') && WA_API_KEY !== '') || (defined('OTP_WEBHOOK') && OTP_WEBHOOK !== ''); }
+function send_whatsapp_code(string $ph, string $code): bool {
+  if (!defined('WA_API_KEY') || WA_API_KEY === '' || !function_exists('curl_init')) return false;
+  $body = ['type' => 'template', 'messaging_product' => 'whatsapp', 'to' => '91' . $ph,
+    'template' => ['language' => ['policy' => 'deterministic', 'code' => defined('WA_TEMPLATE_LANG') ? WA_TEMPLATE_LANG : 'en_US'],
+      'name' => defined('WA_TEMPLATE') && WA_TEMPLATE !== '' ? WA_TEMPLATE : 'chini_login',
+      'components' => [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $code]]],
+        ['index' => 0, 'type' => 'button', 'sub_type' => 'url', 'parameters' => [['type' => 'text', 'text' => $code]]],
+      ]]];
+  $ch = curl_init(defined('WA_ENDPOINT') ? WA_ENDPOINT : 'https://orailap.azurewebsites.net/api/cloud/Dialog');
+  curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'API-KEY: Bearer ' . WA_API_KEY]]);
+  $res = (string)curl_exec($ch); $code_http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+  $j = json_decode($res, true);
+  $ok = $code_http >= 200 && $code_http < 300 && !(is_array($j) && (isset($j['error']) || (isset($j['success']) && $j['success'] === false)));
+  if (!$ok) error_log('tarazu whatsapp otp: HTTP ' . $code_http . ' ' . substr(preg_replace('#\d{6}#', '******', $res), 0, 300));
+  return $ok;
+}
 function send_otp(array $d, string $ph, string $code): array {
   $sent = [];
+  if (send_whatsapp_code($ph, $code)) $sent[] = 'WhatsApp ••••' . substr($ph, -4);
+  elseif (defined('OTP_WEBHOOK') && OTP_WEBHOOK !== '' && function_exists('curl_init')) {
+    $ch = curl_init(OTP_WEBHOOK);
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['phone' => '91' . $ph, 'code' => $code, 'name' => $d['name'] ?? '']),
+      CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json'], n8n_auth_header()), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15]);
+    curl_exec($ch); if ((int)curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) $sent[] = 'WhatsApp ••••' . substr($ph, -4); curl_close($ch);
+  }
   $email = trim((string)($d['email'] ?? ''));
   if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
     $from = defined('OTP_FROM') ? OTP_FROM : 'no-reply@tarazu.live';
     $body = "Your Tarazu sign-in code is $code\r\n\r\nIt works for 5 minutes. If you did not try to sign in, tell your administrator.\r\n\r\nTarazu, Sugar Sale Intelligence System, powered by AgriMandi";
     $hdr = "From: Tarazu <$from>\r\nReply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\nX-Mailer: Tarazu";
     if (@mail($email, "Tarazu sign-in code: $code", $body, $hdr, '-f' . $from)) $sent[] = 'email ' . mask_email($email);
-  }
-  if (defined('OTP_WEBHOOK') && OTP_WEBHOOK !== '' && function_exists('curl_init')) {
-    $ch = curl_init(OTP_WEBHOOK);
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['phone' => '91' . $ph, 'code' => $code, 'name' => $d['name'] ?? '']),
-      CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json'], n8n_auth_header()), CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15]);
-    curl_exec($ch); if ((int)curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) $sent[] = 'WhatsApp ••••' . substr($ph, -4); curl_close($ch);
   }
   return $sent;
 }
@@ -623,7 +644,7 @@ if (!defined('TARAZU_LIB')) try {
           if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
           $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
           $sent = send_otp($d, $ph, $code);
-          if (!$sent) fail('Your sign-in code could not be sent. Ask your administrator to add your email address.', 503);
+          if (!$sent) fail(wa_configured() ? 'Your sign-in code could not be sent on WhatsApp. Try again in a minute, or ask your administrator to add your email address.' : 'Your sign-in code could not be sent. Ask your administrator to add your email address.', 503);
           db()->prepare('INSERT OR REPLACE INTO otp(phone,code_hash,expires,attempts,sent) VALUES(?,?,?,0,?)')->execute([$ph, hash_hmac('sha256', $ph . '|' . $code, APP_SECRET), microtime(true) + 300, microtime(true)]);
           audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'otp_sent', $uid, ['to' => $sent]);
           out(['otp_needed' => true, 'sent_to' => $sent]);
@@ -704,7 +725,7 @@ if (!defined('TARAZU_LIB')) try {
       }
       if ($p === 'config/auth' && ($new['otp_required'] ?? false) === true && !(($old['otp_required'] ?? false) === true)) {
         $mine = get_doc('users/' . $u['id']);
-        if (!filter_var((string)($mine['email'] ?? ''), FILTER_VALIDATE_EMAIL) && !(defined('OTP_WEBHOOK') && OTP_WEBHOOK !== '')) fail('Add your own email address first, so your sign-in code can reach you.');
+        if (!filter_var((string)($mine['email'] ?? ''), FILTER_VALIDATE_EMAIL) && !wa_configured()) fail('Add your own email address first, so your sign-in code can reach you.');
       }
       if ($op === 'delete') del_doc($p);
       else {
@@ -851,7 +872,7 @@ if (!defined('TARAZU_LIB')) try {
       out(['ok' => true]);
     }
     case 'health': out(['ok' => true, 'sqlite' => extension_loaded('pdo_sqlite'), 'openssl' => extension_loaded('openssl'), 'curl' => extension_loaded('curl'), 'data_dir_outside_web' => strpos(DATA_DIR, __DIR__) !== 0,
-      'n8n_key' => defined('N8N_KEY') && N8N_KEY !== '', 'fcm' => defined('FCM_SERVICE_ACCOUNT') && is_file(FCM_SERVICE_ACCOUNT), 'apns' => defined('APNS_KEY_FILE') && is_file(APNS_KEY_FILE)]);
+      'n8n_key' => defined('N8N_KEY') && N8N_KEY !== '', 'whatsapp_otp' => defined('WA_API_KEY') && WA_API_KEY !== '', 'fcm' => defined('FCM_SERVICE_ACCOUNT') && is_file(FCM_SERVICE_ACCOUNT), 'apns' => defined('APNS_KEY_FILE') && is_file(APNS_KEY_FILE)]);
     default: fail('Unknown operation', 404);
   }
 } catch (Throwable $e) {

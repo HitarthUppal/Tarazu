@@ -53,7 +53,7 @@ async function api(op, body, tok) {
     await page.goto(`${BASE}/nirani/`); await page.waitForSelector('#ph-num');
     await page.fill('#ph-num', '9000000002'); await page.fill('#ph-pin', '0000'); await page.click('#phone-form button[type=submit]');
     await page.waitForSelector('#ph-otp', { timeout: 10000 }); ok('code box appears after the PIN', true);
-    ok('says where the code went', await page.locator('text=Sent to email').count() === 1);
+    ok("says where the code went", await page.locator("text=Sent to WhatsApp").count() === 1);
     await page.screenshot({ path: '/tmp/tz-ui-otp.png' });
     const code = (fs.readFileSync('/tmp/tz-local/mail.txt', 'utf8').match(/sign-in code is (\d{6})/) || [])[1];
     await page.fill('#ph-otp', '000001'); await page.click('#phone-form button[type=submit]'); await page.waitForTimeout(800);

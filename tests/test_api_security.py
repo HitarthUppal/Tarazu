@@ -97,14 +97,26 @@ c, _, j = call('update', {'path': 'config/auth', 'data': {'otp_required': True}}
 c, _, j = call('update', {'path': 'config/auth', 'data': {'otp_required': True}}, MASTER); check('master turns on one-time codes', c == 200, j)
 open(f'{ROOT}/mail.txt', 'w').close()
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000'}); check('PIN accepted, code requested', c == 200 and j.get('otp_needed') and 'token' not in j, j)
-check('code sent to masked email', any('email ow' in x for x in j.get('sent_to', [])), j)
+check('code sent to WhatsApp and masked email', any('email ow' in x for x in j.get('sent_to', [])) and any('WhatsApp' in x for x in j.get('sent_to', [])), j)
 mail = open(f'{ROOT}/mail.txt').read(); code = (re.findall(r'sign-in code is (\d{6})', mail) or [''])[-1]
 check('email carries a 6-digit code', len(code) == 6)
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000', 'otp': '000000' if code != '000000' else '111111'}); check('wrong code refused', c == 401)
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '9999', 'otp': code}); check('right code with wrong PIN refused', c == 401)
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000', 'otp': code}); check('PIN + code signs in', c == 200 and j.get('token', '').startswith('tz1_'), j)
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000', 'otp': code}); check('a code works only once', c != 200 or j.get('otp_needed'))
-c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('no email and no WhatsApp: clear message, no sign-in', c == 503 and 'email' in j.get('error', ''), j)
+open(f'{ROOT}/wa.jsonl', 'w').close()
+c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('no email: code goes on WhatsApp', c == 200 and j.get('otp_needed') and any('WhatsApp ••••0004' == x for x in j.get('sent_to', [])), j)
+wa = [json.loads(l) for l in open(f'{ROOT}/wa.jsonl') if l.strip()]
+b = wa[-1]['body'] if wa else {}
+check('WhatsApp request uses the API key header', wa and wa[-1]['key'] == 'Bearer test-wa-key')
+check('WhatsApp request: template chini_login to 91 + number', b.get('to') == '919000000004' and b.get('template', {}).get('name') == 'chini_login' and b.get('messaging_product') == 'whatsapp', b)
+comps = b.get('template', {}).get('components', [])
+wcode = comps[0]['parameters'][0]['text'] if comps else ''
+check('code in message body and in the copy-code button', len(wcode) == 6 and comps[1]['sub_type'] == 'url' and comps[1]['parameters'][0]['text'] == wcode, comps)
+c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444', 'otp': wcode}); check('WhatsApp code signs in', c == 200 and j.get('token', '').startswith('tz1_'), j)
+open(f'{ROOT}/wa-fail', 'w').close(); con = db(); con.execute('delete from rate'); con.commit()
+c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('WhatsApp down and no email: clear message, no sign-in', c == 503 and 'WhatsApp' in j.get('error', ''), j)
+os.remove(f'{ROOT}/wa-fail')
 c, _, j = call('update', {'path': 'users/p1', 'data': {'otp_exempt': True}}, OWNER); check('owner cannot exempt anyone from codes', c == 403)
 c, _, j = call('update', {'path': 'users/p1', 'data': {'otp_exempt': True}}, MASTER); check('master can mark the store-review account', c == 200)
 c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('marked account signs in without a code', c == 200 and j.get('token', '').startswith('tz1_'), j)
