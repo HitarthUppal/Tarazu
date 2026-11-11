@@ -2,7 +2,6 @@ node_modules/
 mobile/www/
 mobile/android/app/build/
 mobile/android/.gradle/
-mobile/android/app/google-services.json
 mobile/android/app/*.keystore
 mobile/ios/App/App/public/
 mobile/build-out/

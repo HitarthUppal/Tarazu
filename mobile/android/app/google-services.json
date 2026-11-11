@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "551902705579",
+    "project_id": "tarazu-ceb96",
+    "storage_bucket": "tarazu-ceb96.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:551902705579:android:5080b33982214bd43404ee",
+        "android_client_info": {
+          "package_name": "live.tarazu.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwySnsleRvHS2yeYGlx_KcvLsI8RQwRNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
