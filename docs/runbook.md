@@ -21,6 +21,12 @@
 | `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `APPLE_TEAM_ID` | ios | Apple Distribution certificate and an App Store profile for `live.tarazu.app` with Push enabled. |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` | ios | App Store Connect API key, for TestFlight uploads. |
 
+**Making the Android upload key (once, on your PC with Java installed; keep the file and password offline):**
+```
+keytool -genkeypair -keystore tarazu-upload.keystore -storetype PKCS12 -alias tarazu-upload -keyalg RSA -keysize 4096 -validity 10950 -dname "CN=Tarazu, O=JK India eAgriTech Limited, L=Mumbai, C=IN"
+```
+Then add `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded: `certutil -encode` on Windows, then strip the header lines), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` (the same password) and `ANDROID_KEY_ALIAS` = `tarazu-upload`.
+
 Server-side push keys are files placed in `/home2/tarazu/tarazu_data/` by hand (never in the repo): `fcm-service-account.json` (Firebase service account) and `apns-key.p8`, plus `APNS_KEY_ID` and `APNS_TEAM_ID` defined in `config.php`.
 
 ## Cutover to the hardened version (one time)
