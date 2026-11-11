@@ -68,6 +68,17 @@ jobs:
             "$HOST/execute/Fileman/upload_files" | tee /tmp/up.json | grep -q '"status":1' || { cat /tmp/up.json; exit 1; }
           rm /tmp/secrets.php
 
+      - name: Firebase push key (outside the web root)
+        env:
+          FCM_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$FCM_JSON" ]; then echo "No FCM_SERVICE_ACCOUNT_JSON secret: Android push stays off"; exit 0; fi
+          printf '%s' "$FCM_JSON" > /tmp/fcm-service-account.json
+          python3 -c "import json; j=json.load(open('/tmp/fcm-service-account.json')); assert j['type']=='service_account' and j['project_id']"
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DATADIR" -F "overwrite=1" -F "file-1=@/tmp/fcm-service-account.json" \
+            "$HOST/execute/Fileman/upload_files" | grep -q '"status":1'
+          rm /tmp/fcm-service-account.json; echo "FCM key placed"
+
       - name: Upload web files
         run: |
           cd web
@@ -86,7 +97,7 @@ jobs:
             [ "$want" = "$got" ] && echo "ok $f" || { echo "MISMATCH $f"; exit 1; }
           done
           curl -fsS https://tarazu.live/api.php?op=health | tee /tmp/h.json; echo
-          python3 -c "import json; h=json.load(open('/tmp/h.json')); assert h['ok'] and h['data_dir_outside_web'], h"
+          python3 -c "import json; h=json.load(open('/tmp/h.json')); assert h['ok'] and h['data_dir_outside_web'] and h['n8n_key'], h"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/config.php)" = "403" ] && echo "ok config.php blocked"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/files/x.pdf)" = "403" ] && echo "ok files/ blocked"
           curl -sI https://tarazu.live/nirani/ | grep -qi "content-security-policy" && echo "ok CSP header"
