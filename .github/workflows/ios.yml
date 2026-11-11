@@ -9,7 +9,7 @@ on:
         type: boolean
   push:
     branches: [main]
-    paths: ["mobile/**", "web/nirani/**", ".github/workflows/ios.yml"]
+    paths: ["mobile/**", "web/index.html", "web/*.png", ".github/workflows/ios.yml"]
 
 jobs:
   build:

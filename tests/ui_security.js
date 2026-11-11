@@ -46,20 +46,41 @@ async function api(op, body, tok) {
     ok('no script errors', errors.length === 0, errors.slice(0, 3));
     await ctx.close();
   }
-  console.log('\none-time code');
-  await api('update', { path: 'config/auth', data: { phone_required: true, otp_required: true } }, master);
-  fs.writeFileSync('/tmp/tz-local/mail.txt', '');
-  { const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await ctx.newPage();
+  console.log('\nGet OTP sign-in');
+  await api('update', { path: 'config/auth', data: { phone_required: false, otp_required: true } }, master);
+  fs.writeFileSync('/tmp/tz-local/wa.jsonl', '');
+  for (const vp of [{ name: 'phone', w: 390, h: 844 }, { name: 'desktop', w: 1366, h: 900 }]) {
+    const ctx = await browser.newContext({ viewport: { width: vp.w, height: vp.h } }); const page = await ctx.newPage();
+    const errs = []; page.on('pageerror', e => errs.push(String(e)));
     await page.goto(`${BASE}/nirani/`); await page.waitForSelector('#ph-num');
-    await page.fill('#ph-num', '9000000002'); await page.fill('#ph-pin', '0000'); await page.click('#phone-form button[type=submit]');
-    await page.waitForSelector('#ph-otp', { timeout: 10000 }); ok('code box appears after the PIN', true);
-    ok("says where the code went", await page.locator("text=Sent to WhatsApp").count() === 1);
-    await page.screenshot({ path: '/tmp/tz-ui-otp.png' });
-    const code = (fs.readFileSync('/tmp/tz-local/mail.txt', 'utf8').match(/sign-in code is (\d{6})/) || [])[1];
-    await page.fill('#ph-otp', '000001'); await page.click('#phone-form button[type=submit]'); await page.waitForTimeout(800);
-    ok('wrong code shows an error', await page.locator('.notice.err').count() === 1);
-    await page.fill('#ph-otp', code); await page.click('#phone-form button[type=submit]');
-    await page.waitForFunction(() => !document.querySelector('#ph-num'), null, { timeout: 10000 }); ok('right code signs in', true);
+    ok(`${vp.name}: no Login demo button`, await page.locator('[data-act="login-demo"]').count() === 0);
+    ok(`${vp.name}: no name list`, await page.locator('[data-act="pick-login"]').count() === 0);
+    ok(`${vp.name}: no PIN box when codes are on`, await page.locator('#ph-pin').count() === 0);
+    ok(`${vp.name}: button says Get OTP`, await page.locator('#otp-request-form button[type=submit]:has-text("Get OTP")').count() === 1);
+    await page.fill('#ph-num', '98765'); await page.click('#otp-request-form button[type=submit]'); await page.waitForTimeout(400);
+    ok(`${vp.name}: short number rejected`, await page.locator('.notice.err').count() === 1);
+    await page.fill('#ph-num', '9000000002'); await page.click('#otp-request-form button[type=submit]');
+    await page.waitForSelector('#ph-otp', { timeout: 10000 });
+    ok(`${vp.name}: code step shows the masked number`, await page.locator('text=+91 90•••••002').count() === 1);
+    ok(`${vp.name}: resend waits 30 s`, await page.locator('[data-act="otp-resend"][disabled]').count() === 1);
+    await page.screenshot({ path: `/tmp/tz-ui-otp-${vp.name}.png` });
+    const lines = fs.readFileSync('/tmp/tz-local/wa.jsonl', 'utf8').trim().split('\n'); const code = JSON.parse(lines[lines.length - 1]).body.template.components[0].parameters[0].text;
+    await page.fill('#ph-otp', code === '000000' ? '111111' : '000000'); await page.click('#otp-verify-form button[type=submit]');
+    await page.waitForSelector('.notice.err', { timeout: 8000 }); ok(`${vp.name}: wrong code shows an error`, true);
+    await page.fill('#ph-otp', code); await page.click('#otp-verify-form button[type=submit]');
+    await page.waitForFunction(() => !document.querySelector('#ph-num') && !document.querySelector('#ph-otp'), null, { timeout: 10000 });
+    ok(`${vp.name}: code signs in`, (await page.evaluate(() => localStorage.getItem('tarazu.token') || '')).startsWith('tz1_'));
+    ok(`${vp.name}: no script errors`, errs.length === 0, errs.slice(0, 2));
+    await ctx.close();
+    const con = require('child_process').execFileSync('python3', [__dirname + '/q.py', "delete from rate"]);
+  }
+  { const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } }); const page = await ctx.newPage();
+    await page.goto(`${BASE}/`); await page.waitForSelector('#ph-num');
+    ok('tarazu.live root keeps the Nirani Group card', await page.locator('a.client-card').count() === 1);
+    await page.screenshot({ path: '/tmp/tz-ui-root.png' });
+    await api('update', { path: 'users/p1', data: { otp_exempt: true } }, master);
+    await page.fill('#ph-num', '9000000004'); await page.click('#otp-request-form button[type=submit]');
+    await page.waitForSelector('#ph-pin', { timeout: 8000 }); ok('store-review account is asked for its PIN instead', true);
     await ctx.close(); }
   await api('update', { path: 'config/auth', data: { otp_required: false } }, master);
   console.log('\nmaster');

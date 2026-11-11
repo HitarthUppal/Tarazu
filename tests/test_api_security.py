@@ -123,6 +123,27 @@ c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('ma
 con = db(); con.execute('delete from fails'); con.execute('delete from rate'); con.commit()
 call('update', {'path': 'config/auth', 'data': {'otp_required': False, 'phone_required': False}}, MASTER)
 
+print('Code-only sign-in (Get OTP)')
+call('update', {'path': 'config/auth', 'data': {'otp_required': True}}, MASTER)
+con = db(); con.execute('delete from rate'); con.execute('delete from fails'); con.commit()
+open(f'{ROOT}/wa.jsonl', 'w').close()
+c, _, j = call('otp_request', {'phone': '9000000003'}); check('Get OTP for a registered number', c == 200 and j.get('ok') and j.get('masked', '').endswith('003'), j)
+wa = [json.loads(l) for l in open(f'{ROOT}/wa.jsonl') if l.strip()]
+code = wa[-1]['body']['template']['components'][0]['parameters'][0]['text'] if wa else ''
+c, _, j = call('otp_request', {'phone': '9888888888'}); check('unregistered number gets the same answer (no probing)', c == 200 and set(j) == {'ok', 'masked'}, j)
+check('no message sent to an unregistered number', len([l for l in open(f'{ROOT}/wa.jsonl') if l.strip()]) == 1)
+c, _, j = call('otp_verify', {'phone': '9000000003', 'otp': '000000' if code != '000000' else '111111'}); check('wrong code refused', c == 401)
+c, _, j = call('otp_verify', {'phone': '9000000003', 'otp': code}); check('right code signs in without a PIN', c == 200 and j.get('token', '').startswith('tz1_') and j.get('user_id') == 'mg1', j)
+c, _, j = call('otp_verify', {'phone': '9000000003', 'otp': code}); check('code works once only', c == 401)
+c, _, j = call('otp_verify', {'phone': '9888888888', 'otp': '123456'}); check('unregistered number cannot sign in', c == 401)
+c, _, j = call('otp_request', {'phone': '9000000004'}); check('store-review account told to use its PIN', c == 200 and j.get('pin_instead') is True, j)
+for _ in range(3): call('otp_request', {'phone': '9000000002'})
+c, _, j = call('otp_request', {'phone': '9000000002'}); check('Get OTP limited to 3 per 15 minutes', c == 429, c)
+c, _, j = call('sync', {}); check('signed-out sync shows no people while codes are on', not any(d['path'].startswith('users/') for d in j['docs']))
+call('update', {'path': 'config/auth', 'data': {'otp_required': False}}, MASTER)
+c, _, j = call('otp_request', {'phone': '9000000003'}); check('Get OTP refused while codes are off', c == 409)
+con = db(); con.execute('delete from rate'); con.execute('delete from fails'); con.commit()
+
 print('AI workflows')
 c, _, j = call('flow', {'x': 1}, qs='&trigger=Brief%20In'); check('signed-out AI call refused', c == 401)
 c, _, j = login('p1', '4444'); P1 = j['token']

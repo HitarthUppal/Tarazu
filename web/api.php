@@ -169,7 +169,8 @@ function can_read(?array $u, string $p, array $d): bool {
   $par = parent_of($p);
   if (!$u) {
     if ($p === 'config/auth') return true;
-    if ((get_doc('config/auth')['phone_required'] ?? false) === true) return $par === 'clients';
+    $au = get_doc('config/auth') ?? [];
+    if (($au['phone_required'] ?? false) === true || ($au['otp_required'] ?? false) === true) return $par === 'clients';
     return in_array($par, ['users', 'clients'], true) || $p === 'config/market';
   }
   if ($u['role'] === 'master') return true;
@@ -661,6 +662,47 @@ if (!defined('TARAZU_LIB')) try {
       db()->prepare('DELETE FROM fails WHERE k=?')->execute(['p:' . $ph]);
       if (empty($d['pin_hash'])) put_doc('users/' . $uid, protect_pin($d));
       audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'login', $uid, ['how' => $otp !== '' ? 'phone+otp' : 'phone']);
+      out(['token' => make_token($uid), 'user_id' => $uid, 'role' => $d['role'] ?? '']);
+    }
+    case 'otp_request': {
+      /* step 1 of code sign-in: mobile number in, code out on WhatsApp (email as backup).
+         The answer is the same whether or not the number is registered, so the user list cannot be probed. */
+      if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) !== true) fail('Sign in with your mobile number and PIN.', 409);
+      $ph = norm_phone($in['phone'] ?? '');
+      if (!preg_match('#^[6-9]\d{9}$#', $ph)) fail('Enter your 10-digit mobile number.', 400);
+      if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
+      usleep(200000);
+      $uid = null; $d = null;
+      foreach (docs_under('users') as $id => $doc) if (($doc['active'] ?? true) !== false && norm_phone($doc['phone'] ?? '') === $ph) { $uid = $id; $d = $doc; break; }
+      $generic = ['ok' => true, 'masked' => '+91 ' . substr($ph, 0, 2) . '•••••' . substr($ph, -3)];
+      if (!$d) { audit(null, 'otp_unknown', 'phone:' . substr($ph, -4)); out($generic); }
+      if (($d['otp_exempt'] ?? false) === true) out($generic + ['pin_instead' => true]);   // store-review account signs in with its PIN
+      $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+      $sent = send_otp($d, $ph, $code);
+      if (!$sent) { audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'otp_failed', $uid); fail('The code could not be sent right now. Please try again in a minute.', 503); }
+      db()->prepare('INSERT OR REPLACE INTO otp(phone,code_hash,expires,attempts,sent) VALUES(?,?,?,0,?)')->execute([$ph, hash_hmac('sha256', $ph . '|' . $code, APP_SECRET), microtime(true) + 300, microtime(true)]);
+      audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'otp_sent', $uid, ['to' => $sent]);
+      out($generic);
+    }
+    case 'otp_verify': {
+      /* step 2: mobile number + code in, session out */
+      $ph = norm_phone($in['phone'] ?? ''); $otp = preg_replace('#\D#', '', (string)($in['otp'] ?? ''));
+      if (!preg_match('#^\d{10}$#', $ph) || strlen($otp) !== 6) fail('Enter the 6-digit code.', 400);
+      usleep(250000);
+      $keys = ['p:' . $ph => [5, 900], 'ip:' . client_ip() => [20, 900]];
+      login_guard($keys);
+      $st = db()->prepare('SELECT * FROM otp WHERE phone=?'); $st->execute([$ph]); $o = $st->fetch(PDO::FETCH_ASSOC);
+      $good = $o && (float)$o['expires'] > microtime(true) && (int)$o['attempts'] < 5 && hash_equals((string)$o['code_hash'], hash_hmac('sha256', $ph . '|' . $otp, APP_SECRET));
+      $uid = null; $d = null;
+      if ($good) foreach (docs_under('users') as $id => $doc) if (($doc['active'] ?? true) !== false && norm_phone($doc['phone'] ?? '') === $ph) { $uid = $id; $d = $doc; break; }
+      if (!$good || !$d) {
+        if ($o) db()->prepare('UPDATE otp SET attempts=attempts+1 WHERE phone=?')->execute([$ph]);
+        login_failed($keys); audit(null, 'login_fail', 'phone:' . substr($ph, -4), ['how' => 'otp']);
+        fail($o && (float)$o['expires'] <= microtime(true) ? 'That code has expired. Tap Resend code.' : 'That code does not match.', 401);
+      }
+      db()->prepare('DELETE FROM otp WHERE phone=?')->execute([$ph]);
+      db()->prepare('DELETE FROM fails WHERE k=?')->execute(['p:' . $ph]);
+      audit(['id' => $uid, 'client_id' => $d['client_id'] ?? null], 'login', $uid, ['how' => 'otp']);
       out(['token' => make_token($uid), 'user_id' => $uid, 'role' => $d['role'] ?? '']);
     }
     case 'logout': {
