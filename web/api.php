@@ -2,6 +2,8 @@
 /* Tarazu API: a small document store (SQLite) with PIN sign-in, role checks and web push. */
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
+/* secrets managed in GitHub and written by the deploy workflow, outside the web root */
+if (defined('DATA_DIR') && is_file(DATA_DIR . '/secrets.php')) require_once DATA_DIR . '/secrets.php';
 if (!defined('TARAZU_LIB')) {
   header('Content-Type: application/json; charset=utf-8');
   header('Cache-Control: no-store');
@@ -615,7 +617,8 @@ if (!defined('TARAZU_LIB')) try {
         login_failed($keys); audit(null, 'login_fail', 'phone:' . substr($ph, -4), ['user_id' => $uid, 'how' => 'phone']);
         fail('That number and PIN do not match.', 401);
       }
-      if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) === true) {
+      /* otp_exempt: only for the app-store reviewer account, settable by master admin only (see can_write rule below) */
+      if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) === true && ($d['otp_exempt'] ?? false) !== true) {
         if ($otp === '') {
           if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
           $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
@@ -690,6 +693,7 @@ if (!defined('TARAZU_LIB')) try {
       if ($op !== 'delete') { $data = $in['data'] ?? null; if (!is_array($data)) fail('Bad data'); $new = $op === 'update' ? array_merge($old ?? [], $data) : $data; }
       if (!can_write($u, $p, $new, $old)) fail('You do not have permission to change this.', 403);
       $is_user = parent_of($p) === 'users';
+      if ($is_user && array_key_exists('otp_exempt', $in['data'] ?? []) && $u['role'] !== 'master') fail('Only master admin can change this.', 403);
       if ($is_user && isset($in['data']['pin']) && (string)$in['data']['pin'] !== '' && !preg_match('#^\d{4,6}$#', (string)$in['data']['pin'])) fail('PIN must be 4 to 6 digits');
       if (parent_of($p) === 'users' && is_array($new) && ($new['phone'] ?? '') !== '' && isset($in['data']['phone'])) {
         $ph = norm_phone($new['phone']); if (!preg_match('#^[6-9]\d{9}$#', $ph)) fail('Enter a 10-digit Indian mobile number.');

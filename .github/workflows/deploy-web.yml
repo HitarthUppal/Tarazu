@@ -1,0 +1,94 @@
+name: Deploy website to tarazu.live
+
+# Manual, with the "production" environment (add required reviewers in GitHub settings to make it two-step).
+# Uses the cPanel API with a token (secret CPANEL_TOKEN for user CPANEL_USER). Never touches config.php or the database,
+# except to take a snapshot of the database before the files change.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DEPLOY to publish web/ to tarazu.live"
+        required: true
+
+concurrency: deploy-production
+
+jobs:
+  deploy:
+    if: inputs.confirm == 'DEPLOY'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      HOST: https://tarazu.live:2083
+      CP_USER: ${{ secrets.CPANEL_USER }}
+      CP_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+      DOCROOT: /home2/tarazu/public_html
+      DATADIR: /home2/tarazu/tarazu_data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the build before touching the server
+        run: |
+          php -l web/api.php && php -l web/cron.php
+          ! grep -q "n8n.cloud" web/index.html || { echo "n8n address in page"; exit 1; }
+          grep -q "tarazu-security v1" web/index.html
+
+      - name: Snapshot the database
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" \
+            "$HOST/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=fileop&op=copy&sourcefiles=$DATADIR/tarazu.sqlite&destfiles=$DATADIR/predeploy-$STAMP.sqlite" \
+            | tee /tmp/snap.json | grep -q '"result":1' || { echo "snapshot failed"; cat /tmp/snap.json; exit 1; }
+          echo "Snapshot: predeploy-$STAMP.sqlite"
+
+      - name: Write server secrets (outside the web root)
+        env:
+          N8N_KEY: ${{ secrets.N8N_KEY }}
+          BACKUP_KEY: ${{ secrets.BACKUP_KEY }}
+          OTP_FROM: ${{ secrets.OTP_FROM }}
+          OTP_WEBHOOK: ${{ secrets.OTP_WEBHOOK }}
+          HOOK_BRIEF: ${{ secrets.HOOK_BRIEF }}
+          HOOK_VOICE: ${{ secrets.HOOK_VOICE }}
+          HOOK_REPORT: ${{ secrets.HOOK_REPORT }}
+          HOOK_MARKET: ${{ secrets.HOOK_MARKET }}
+        run: |
+          python3 - <<'PY'
+          import os
+          lines = ["<?php", "/* Written by the GitHub deploy workflow. Edit the repository secrets, not this file. */"]
+          for k in ["N8N_KEY","BACKUP_KEY","OTP_FROM","OTP_WEBHOOK","HOOK_BRIEF","HOOK_VOICE","HOOK_REPORT","HOOK_MARKET"]:
+              v = os.environ.get(k, "")
+              if v:
+                  assert "'" not in v and "\\" not in v, k
+                  lines.append(f"if (!defined('{k}')) define('{k}', '{v}');")
+          lines += ["if (!defined('FCM_SERVICE_ACCOUNT') && is_file(__DIR__ . '/fcm-service-account.json')) define('FCM_SERVICE_ACCOUNT', __DIR__ . '/fcm-service-account.json');",
+                    "if (!defined('APNS_KEY_FILE') && is_file(__DIR__ . '/apns-key.p8')) define('APNS_KEY_FILE', __DIR__ . '/apns-key.p8');"]
+          open("/tmp/secrets.php","w").write("\n".join(lines) + "\n")
+          PY
+          php -l /tmp/secrets.php
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DATADIR" -F "overwrite=1" -F "file-1=@/tmp/secrets.php" \
+            "$HOST/execute/Fileman/upload_files" | tee /tmp/up.json | grep -q '"status":1' || { cat /tmp/up.json; exit 1; }
+          rm /tmp/secrets.php
+
+      - name: Upload web files
+        run: |
+          cd web
+          ARGS=(); i=1
+          for f in index.html api.php cron.php sw.js manifest.webmanifest icon-192.png icon-512.png nirani-logo.png agrimandi-logo.png privacy.html delete-account.html .htaccess; do
+            [ -f "$f" ] && ARGS+=(-F "file-$i=@$f") && i=$((i+1))
+          done
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DOCROOT" -F "overwrite=1" "${ARGS[@]}" \
+            "$HOST/execute/Fileman/upload_files" | tee /tmp/up.json | python3 -c "import json,sys; j=json.load(sys.stdin); print(j.get('data',{}).get('succeeded'), 'uploaded'); sys.exit(0 if j.get('status')==1 and not j.get('data',{}).get('failed') else 1)"
+
+      - name: Check the live site
+        run: |
+          set -e
+          for f in index.html sw.js manifest.webmanifest; do
+            want=$(sha256sum web/$f | cut -d' ' -f1); got=$(curl -fsS "https://tarazu.live/$f?v=$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+            [ "$want" = "$got" ] && echo "ok $f" || { echo "MISMATCH $f"; exit 1; }
+          done
+          curl -fsS https://tarazu.live/api.php?op=health | tee /tmp/h.json; echo
+          python3 -c "import json; h=json.load(open('/tmp/h.json')); assert h['ok'] and h['data_dir_outside_web'], h"
+          [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/config.php)" = "403" ] && echo "ok config.php blocked"
+          [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/files/x.pdf)" = "403" ] && echo "ok files/ blocked"
+          curl -sI https://tarazu.live/nirani/ | grep -qi "content-security-policy" && echo "ok CSP header"
+          curl -sI https://tarazu.live/nirani/ | grep -qi "strict-transport-security" && echo "ok HSTS header"
+          ! curl -fsS https://tarazu.live/nirani/ | grep -q "n8n.cloud" && echo "ok no n8n address in page"

@@ -105,6 +105,9 @@ c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '9999', 'otp': code
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000', 'otp': code}); check('PIN + code signs in', c == 200 and j.get('token', '').startswith('tz1_'), j)
 c, _, j = call('login_phone', {'phone': '9000000002', 'pin': '0000', 'otp': code}); check('a code works only once', c != 200 or j.get('otp_needed'))
 c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('no email and no WhatsApp: clear message, no sign-in', c == 503 and 'email' in j.get('error', ''), j)
+c, _, j = call('update', {'path': 'users/p1', 'data': {'otp_exempt': True}}, OWNER); check('owner cannot exempt anyone from codes', c == 403)
+c, _, j = call('update', {'path': 'users/p1', 'data': {'otp_exempt': True}}, MASTER); check('master can mark the store-review account', c == 200)
+c, _, j = call('login_phone', {'phone': '9000000004', 'pin': '4444'}); check('marked account signs in without a code', c == 200 and j.get('token', '').startswith('tz1_'), j)
 con = db(); con.execute('delete from fails'); con.execute('delete from rate'); con.commit()
 call('update', {'path': 'config/auth', 'data': {'otp_required': False, 'phone_required': False}}, MASTER)
 
