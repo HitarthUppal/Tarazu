@@ -1,0 +1,96 @@
+name: Android build
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track to upload to (none = build only)"
+        default: none
+        type: choice
+        options: [none, internal, closed, production]
+  push:
+    branches: [main]
+    paths: ["mobile/**", "web/nirani/**", ".github/workflows/android.yml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install and bundle web assets
+        run: |
+          npm ci
+          npm run build:www
+          npx cap sync android
+
+      - name: Firebase config (push notifications)
+        if: ${{ env.GOOGLE_SERVICES_JSON != '' }}
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+      - name: Version from run number
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"$(node -p "require('./package.json').version")\"/" android/app/build.gradle
+
+      - name: Signing key
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.keystore
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: building an unsigned debug APK only."
+          fi
+
+      - name: Build release bundle (AAB) and APK
+        if: steps.sign.outputs.signed == 'true'
+        working-directory: mobile/android
+        env:
+          TARAZU_KEYSTORE_PATH: release.keystore
+          TARAZU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TARAZU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TARAZU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon bundleRelease assembleRelease
+
+      - name: Build debug APK
+        if: steps.sign.outputs.signed != 'true'
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarazu-android-${{ github.run_number }}
+          path: |
+            mobile/android/app/build/outputs/bundle/release/*.aab
+            mobile/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Upload to Google Play
+        if: ${{ steps.sign.outputs.signed == 'true' && inputs.track != '' && inputs.track != 'none' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: live.tarazu.app
+          releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: draft

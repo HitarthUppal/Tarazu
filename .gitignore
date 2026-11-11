@@ -1,0 +1,20 @@
+node_modules/
+mobile/www/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/app/google-services.json
+mobile/android/app/*.keystore
+mobile/ios/App/App/public/
+mobile/build-out/
+*.keystore
+*.p12
+*.mobileprovision
+*.p8
+# server secrets and data never go in the repo
+web/config.php
+web/tarazu_data/
+web/files/
+*.sqlite
+*.sqlite-*
+.env
+secrets/

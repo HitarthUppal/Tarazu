@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tarazu</string>
+    <string name="title_activity_main">Tarazu</string>
+    <string name="package_name">live.tarazu.app</string>
+    <string name="custom_url_scheme">live.tarazu.app</string>
+</resources>
