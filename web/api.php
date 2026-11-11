@@ -642,7 +642,7 @@ if (!defined('TARAZU_LIB')) try {
       /* otp_exempt: only for the app-store reviewer account, settable by master admin only (see can_write rule below) */
       if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) === true && ($d['otp_exempt'] ?? false) !== true) {
         if ($otp === '') {
-          if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
+          if (!rate_ok('otp2:' . $ph, 10, 600) || !rate_ok('otpip2:' . client_ip(), 40, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
           $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
           $sent = send_otp($d, $ph, $code);
           if (!$sent) fail(wa_configured() ? 'Your sign-in code could not be sent on WhatsApp. Try again in a minute, or ask your administrator to add your email address.' : 'Your sign-in code could not be sent. Ask your administrator to add your email address.', 503);
@@ -670,7 +670,7 @@ if (!defined('TARAZU_LIB')) try {
       if (((get_doc('config/auth') ?? [])['otp_required'] ?? false) !== true) fail('Sign in with your mobile number and PIN.', 409);
       $ph = norm_phone($in['phone'] ?? '');
       if (!preg_match('#^[6-9]\d{9}$#', $ph)) fail('Enter your 10-digit mobile number.', 400);
-      if (!rate_ok('otp:' . $ph, 3, 900) || !rate_ok('otpip:' . client_ip(), 10, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
+      if (!rate_ok('otp2:' . $ph, 10, 600) || !rate_ok('otpip2:' . client_ip(), 40, 3600)) fail('Too many codes requested. Try again in a few minutes.', 429);
       usleep(200000);
       $uid = null; $d = null;
       foreach (docs_under('users') as $id => $doc) if (($doc['active'] ?? true) !== false && norm_phone($doc['phone'] ?? '') === $ph) { $uid = $id; $d = $doc; break; }
