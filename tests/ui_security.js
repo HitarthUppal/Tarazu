@@ -40,14 +40,14 @@ async function api(op, body, tok) {
     await adv.fill('6543'); await adv.press('Tab'); await page.waitForSelector('text=Saved', { timeout: 8000 });
     const r = await api('login_phone', { phone: '9000000004', pin: '6543' });
     ok('PIN typed in the box becomes the new PIN', !!r.token, JSON.stringify(r));
-    await page.click('[data-act="logout"]'); await page.waitForSelector('#ph-num', { timeout: 8000 });
+    if(!(await page.isVisible('[data-act="logout"]'))) await page.click('[data-act="profile"]'); await page.click('#sheet [data-act="logout"], [data-act="logout"]:visible'); await page.waitForSelector('#ph-num', { timeout: 8000 });
     const st = await api('sync', {}, tok); ok('Switch user ends the session on the server', st.signed_in === false);
     ok('no CSP violations', csp.length === 0, csp.slice(0, 3));
     ok('no script errors', errors.length === 0, errors.slice(0, 3));
     await ctx.close();
   }
   console.log('\nGet OTP sign-in');
-  await api('update', { path: 'config/auth', data: { phone_required: false, otp_required: true } }, master);
+  { const u = await api('update', { path: 'config/auth', data: { phone_required: false, otp_required: true } }, master); if(!u.ok) console.log('update failed', JSON.stringify(u)); }
   fs.writeFileSync('/tmp/tz-local/wa.jsonl', '');
   for (const vp of [{ name: 'phone', w: 390, h: 844 }, { name: 'desktop', w: 1366, h: 900 }]) {
     const ctx = await browser.newContext({ viewport: { width: vp.w, height: vp.h } }); const page = await ctx.newPage();

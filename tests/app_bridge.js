@@ -72,7 +72,7 @@ const FAKE_CAP = `
   await page.evaluate(() => { window.__fireApp('appStateChange', { isActive: true }); });
   await page.waitForTimeout(200); ok('shield removed on quick return', !(await page.locator('#tz-shield').isVisible()));
   await page.screenshot({ path: '/tmp/tz-app-home.png' });
-  await page.click('[data-act="logout"]'); await page.waitForSelector('#ph-num', { timeout: 8000 });
+  if(!(await page.isVisible('[data-act="logout"]'))) await page.click('[data-act="profile"]'); await page.click('#sheet [data-act="logout"], [data-act="logout"]:visible'); await page.waitForSelector('#ph-num', { timeout: 8000 });
   const kc2 = await page.evaluate(() => window.__keychain);
   ok('sign out clears the Keychain', !kc2['tarazu.live/session']);
   ok('no script errors in the app', errors.length === 0, errors.slice(0, 3));
