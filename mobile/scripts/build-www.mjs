@@ -28,6 +28,7 @@ const bridge = fs.readFileSync(path.resolve(here, '../src/tarazu-native.js'), 'u
 fs.writeFileSync(path.join(out, 'tarazu-native.js'), bridge);
 for (const dir of ['', 'nirani']) {
   fs.writeFileSync(path.join(out, dir, 'index.html'), html);
+  fs.cpSync(path.join(web, 'fonts'), path.join(out, dir, 'fonts'), { recursive: true });
   for (const a of ASSETS) if (fs.existsSync(path.join(web, a))) fs.copyFileSync(path.join(web, a), path.join(out, dir, a));
 }
 console.log(`www built: ${fs.readdirSync(out).length} entries, app ${pkg.version}`);

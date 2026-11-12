@@ -91,6 +91,13 @@ jobs:
           curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DOCROOT" -F "overwrite=1" "${ARGS[@]}" \
             "$HOST/execute/Fileman/upload_files" | tee /tmp/up.json | python3 -c "import json,sys; j=json.load(sys.stdin); print(j.get('data',{}).get('succeeded'), 'uploaded'); sys.exit(0 if j.get('status')==1 and not j.get('data',{}).get('failed') else 1)"
 
+      - name: Upload fonts
+        run: |
+          curl -sS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" "$HOST/execute/Fileman/mkdir?path=$DOCROOT&name=fonts" >/dev/null || true
+          ARGS=(); i=1; for f in web/fonts/*.woff2; do ARGS+=(-F "file-$i=@$f"); i=$((i+1)); done
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DOCROOT/fonts" -F "overwrite=1" "${ARGS[@]}" \
+            "$HOST/execute/Fileman/upload_files" | python3 -c "import json,sys; j=json.load(sys.stdin); print(j.get('data',{}).get('succeeded'), 'fonts uploaded'); sys.exit(0 if j.get('status')==1 and not j.get('data',{}).get('failed') else 1)"
+
       - name: Check the live site
         run: |
           set -e
@@ -104,4 +111,5 @@ jobs:
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/files/x.pdf)" = "403" ] && echo "ok files/ blocked"
           curl -sI https://tarazu.live/nirani/ | grep -qi "content-security-policy" && echo "ok CSP header"
           curl -sI https://tarazu.live/nirani/ | grep -qi "strict-transport-security" && echo "ok HSTS header"
+          [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/nirani/fonts/overpass-400.woff2)" = "200" ] && echo "ok fonts served"
           ! curl -fsS https://tarazu.live/nirani/ | grep -q "n8n.cloud" && echo "ok no n8n address in page"

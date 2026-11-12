@@ -7,16 +7,22 @@
 <script>window.TARAZU_HOSTED={api:"api.php"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
 <title>Tarazu</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;700&family=Rozha+One&display=swap">
+
+<link rel="preload" href="fonts/overpass-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="fonts/overpass-700.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 /* Layout: phone = one column; desktop = wide work area + right rail for market intelligence. Ledger-style rows for figures. */
+@font-face{font-family:'Overpass';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/overpass-400.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/overpass-600.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/overpass-700.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/overpass-800.woff2) format('woff2')}
+@font-face{font-family:'Rozha One';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/rozha-deva.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF}
+@font-face{font-family:'Rozha One';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/rozha-latin.woff2) format('woff2');unicode-range:U+0000-00FF}
 :root{
   --paper:#f6f7f3; --card:#ffffff; --ink:#18201b; --muted:#5d6a61; --line:#dde2da; --zebra:#f9faf7;
   --cane:#1f6b4a; --cane-soft:#e3efe8; --jaggery:#a8651a; --jaggery-soft:#f6ead9;
   --indigo:#3a4f8f; --indigo-soft:#e6eaf6; --danger:#b3261e; --danger-soft:#f8e3e1; --on-cane:#ffffff;
-  --display:"Rozha One", "Noto Serif Devanagari", Georgia, serif;
-  --body:"Mukta", "Noto Sans Devanagari", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display:"Overpass", system-ui, -apple-system, "Segoe UI", sans-serif; --brand:"Rozha One", "Noto Serif Devanagari", Georgia, serif;
+  --body:"Overpass", "Noto Sans Devanagari", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --paper:#111613; --card:#19201c; --ink:#e7ece8; --muted:#9aa89f; --line:#2b352f; --zebra:#1c241f;
@@ -43,9 +49,6 @@ body:not(.desk) header.bar{position:static}
 .brand .sub small{font-size:11.5px;color:var(--muted)}
 .brand .sub small em{font-style:normal;color:var(--jaggery);font-weight:700}
 .hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-.vt{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.vt button{min-height:32px;padding:4px 10px;border:0;border-radius:0;font-size:13px;background:var(--card)}
-.vt button[aria-pressed="true"]{background:var(--cane-soft);color:var(--cane);font-weight:700}
 h1,h2,h3{margin:0;text-wrap:balance}
 h1{font-size:22px;font-weight:700} h2{font-size:18px;font-weight:700} h3{font-size:15px;font-weight:700}
 .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
@@ -162,7 +165,8 @@ body.desk .login-points li::before{content:"";flex:0 0 8px;height:8px;border-rad
 body.desk .login-card{padding:28px}
 body.desk .login-list{grid-template-columns:repeat(2,minmax(0,1fr))}
 .hero{padding-block:24px 8px;display:flex;flex-direction:column;gap:6px}
-.hero .mark{font-family:var(--display);font-size:56px;line-height:1;color:var(--cane)}
+.hero .mark{font-family:var(--brand);font-size:56px;line-height:1;color:var(--cane)}
+.mark small{font-family:var(--body);font-weight:700;letter-spacing:.2px}
 .hero .mark small{font-size:22px;color:var(--muted);margin-left:8px}
 .empty{padding:20px 16px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px;font-size:14px}
 details summary{cursor:pointer;color:var(--cane);font-weight:500;font-size:14px}
@@ -267,8 +271,8 @@ body.v3 table.v3m .some-avg{display:block;font-size:10.5px;color:#6b5300;margin-
 .brand{gap:10px}
 .client-logo{height:34px;max-width:150px;padding:0;background:none;border-radius:0;margin-right:2px}
 .tz-word{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
-.tz-word b{font-family:var(--display);font-weight:400;font-size:30px;line-height:1;color:var(--cane)}
-.tz-word i{font-family:var(--display);font-style:normal;font-size:15px;color:var(--ink)}
+.tz-word b{font-family:var(--brand);font-weight:400;font-size:30px;line-height:1;color:var(--cane)}
+.tz-word i{font-family:var(--body);font-weight:700;font-style:normal;font-size:15px;color:var(--ink)}
 .brand .sub{padding-left:10px;border-left:1px solid var(--line)}
 .brand .sub .tz-tag{font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--ink)}
 .brand .sub small.powered{display:flex;align-items:center;gap:5px;flex-wrap:wrap;color:var(--muted)}
@@ -298,7 +302,7 @@ body.v3 table.v3m .some-avg{display:block;font-size:10.5px;color:#6b5300;margin-
 <div class="wrap" id="app">
   <header class="bar">
     <div class="brand"><img id="client-logo" class="client-logo" src="nirani-logo.png" alt="Nirani Sugars" hidden><span class="tz-word"><b>तराज़ू</b><i>Tarazu</i></span><div class="sub"><span class="tz-tag">Sugar Sale Intelligence System</span><small class="powered">Powered by <img class="am-logo" src="agrimandi-logo.png" alt="AgriMandi" onerror="this.replaceWith(Object.assign(document.createElement('em'),{textContent:'AgriMandi'}))"><span id="client-tag"></span></small></div></div>
-    <div class="hdr-r"><div class="vt" role="group" aria-label="Layout"><button data-act="vmode" data-k="phone">Phone</button><button data-act="vmode" data-k="desk">Desktop</button></div><span id="who"></span></div>
+    <div class="hdr-r"><span id="who"></span></div>
   </header>
   <main id="main" class="wrap" aria-live="polite">
     <section class="hero"><div class="mark">तराज़ू<small>Tarazu</small></div>
@@ -387,9 +391,8 @@ function mcpMessage(e){
   return (e && e.message) ? "n8n reported: " + String(e.message).slice(0,200) : "The workflow did not finish.";
 }
 var REC = {on:false};
-/* ---------- V1 / V2 interface switch (same data, same server) ---------- */
-let UIV = "v3";
-let V2 = UIV !== "v1", V3 = UIV === "v3";
+/* V3 is the only interface. */
+const UIV = "v3", V2 = true, V3 = true;
 function applyUiv(){ document.body.classList.toggle("v2", V2); document.body.classList.toggle("v3", V3); document.querySelectorAll('[data-act="uiv"]').forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === UIV)));
   if(typeof STANCE_LABEL !== "undefined"){ STANCE_LABEL.sell = V3 ? "Sell all" : "Sell now"; STANCES[0][1] = STANCE_LABEL.sell; } }
 const FLAGS = [["cash","Urgent cash need","Cane payments or other dues coming up"],["quota","Quota lapsing","This month's release quota must be sold soon"],["buyer","Buyer offer pending","A bid is on the table and needs an answer"],["storage","Storage or quality risk","Old stock, moisture or space pressure"],["pledge","Stock pledged with the bank","Margin or limit pressure from the bank"]];
@@ -556,17 +559,16 @@ async function refreshMarket(manual){
 
 /* ---------- layout mode ---------- */
 function applyVmode(){
-  const saved = store.get("tarazu.vmode"); S.vmode = saved || "auto";
-  const desk = S.vmode === "desk" || (S.vmode === "auto" && window.innerWidth >= 1000);
+  S.vmode = "auto"; try{ localStorage.removeItem("tarazu.vmode"); }catch(e){}
+  const desk = window.innerWidth >= 1000;
   document.body.classList.toggle("desk", desk); document.body.classList.toggle("phone", !desk);
-  document.querySelectorAll('[data-act="vmode"]').forEach(b => b.setAttribute("aria-pressed", String((b.dataset.k==="desk") === desk)));
 }
 window.addEventListener("resize", () => { if(S.vmode === "auto"){ const was = document.body.classList.contains("desk"); applyVmode(); if(was !== document.body.classList.contains("desk")) render(); } });
 
 /* ---------- rendering ---------- */
 function renderNoDb(){
   $("#main").innerHTML = `<section class="hero"><div class="mark">तराज़ू<small>Tarazu</small></div>
-  <div class="notice err">This prototype keeps the group's mills, rounds and panel views in shared storage, which needs the page opened in claude.ai while signed in.</div></section>`;
+  <div class="notice err">Tarazu could not reach its server. Check your internet connection, then reopen the app.</div></section>`;
 }
 function setTabs(items){
   const t = $("#tabs");
@@ -1207,7 +1209,7 @@ function management(){
     <div class="tablewrap"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>
     ${S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client).map(u => `<tr><td>${esc(u.name)}</td><td>${esc(roleLabel(u.role))}</td><td class="num">${V2 ? `<input data-uu="${esc(u.id)}" data-k="pin" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="PIN for ${esc(u.name)}" value="" placeholder="${u.has_pin ? "•••• (set)" : "Set PIN"}" style="width:110px;text-align:left">${u.pin_default ? `<span class="sub" style="color:var(--jaggery)">default PIN</span>` : ""}` : (u.has_pin ? "set" : "not set")}</td><td>${u.id!==S.me.id?`<button class="ghost sm" data-act="remove-user" data-id="${esc(u.id)}">Remove</button>`:""}</td></tr>`).join("")}</tbody></table></div>
     <form id="user-form" class="row"><input id="nu-name" placeholder="Name" required style="flex:2;min-width:140px"><select id="nu-role" style="flex:1;min-width:120px"><option value="panelist">Advisor</option><option value="manager">Mill manager</option></select><button type="submit">Add</button></form>
-    ${V2 ? (() => { const n = S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client && u.pin_default).length; return `<p class="small muted">PINs are stored encrypted and are never shown. To reset one, type a new PIN (4 to 6 digits); it saves when you leave the box and signs that person out of every device. New people start on 0000.${n ? ` <b style="color:var(--jaggery)">${n} ${n === 1 ? "person is" : "people are"} still on the default PIN, so anyone could sign in as them.</b>` : ""}</p>`; })() : `<p class="small muted">New people get PIN 0000 for the prototype.</p>`}
+    ${V2 ? (() => { const n = S.users.filter(u => u.active !== false && u.role !== "master" && u.client_id === S.client && u.pin_default).length; return `<p class="small muted">PINs are stored encrypted and are never shown. To reset one, type a new PIN (4 to 6 digits); it saves when you leave the box and signs that person out of every device. New people start on 0000.${n ? ` <b style="color:var(--jaggery)">${n} ${n === 1 ? "person is" : "people are"} still on the default PIN, so anyone could sign in as them.</b>` : ""}</p>`; })() : `<p class="small muted">New people sign in with their mobile number. If one-time codes are off, they start on PIN 0000.</p>`}
     ${S.me && S.me.role === "owner" ? securityCard() : ""}
     <h3>Holding cost</h3>
     <form id="settings-form" class="grid2"><label>Interest on working capital (% a year)<input id="st-rate" inputmode="decimal" value="${st.rate}"></label><label>Storage and insurance (₹/qtl a month)<input id="st-store" inputmode="decimal" value="${st.storage}"></label><button type="submit">Save rates</button></form>
@@ -1216,8 +1218,7 @@ function management(){
     ${V3 ? csvHelp() : `<p class="small muted">Import a CSV with columns for month (or date), mill code or name, quantity sold (qtl) and average price. Column names are matched loosely.</p>`}
     <label class="btn" style="flex-direction:row">Import sales CSV<input id="sales-file" type="file" accept=".csv,text/csv" hidden></label>
     ${S.err.sales?`<div class="notice err">${esc(S.err.sales)}</div>`:""}${S.sales.length?`<p class="small">${S.sales.length} monthly rows loaded.</p>`:""}
-    ${S.rounds.some(r => r.example||r.demo)||S.mills.some(m => m.example||m.demo)||S.outlooks.some(o => o.example||o.demo)?`<h3>Example data</h3><button class="danger" data-act="clear-examples">${S.draft.confirmClear?"Tap again to clear example rounds and figures":"Clear example rounds and figures"}</button>`:""}
-    <p class="small muted">Notifications: in this prototype, open rounds show as a badge on the tab. The hosted app will send push notifications.</p></section>`;
+    ${isMaster() && (S.rounds.some(r => r.example||r.demo)||S.mills.some(m => m.example||m.demo)||S.outlooks.some(o => o.example||o.demo))?`<h3>Example data</h3><button class="danger" data-act="clear-examples">${S.draft.confirmClear?"Tap again to clear example rounds and figures":"Clear example rounds and figures"}</button>`:""}</section>`;
 }
 
 /* ---------- latest round on top ---------- */
@@ -1307,7 +1308,7 @@ function clientAdminView(){
     ${V3 ? csvHelp() : `<p class="small muted">Import a CSV with columns for month (or date), mill code or name, quantity sold (qtl) and average price. Column names are matched loosely. The AI brief uses this history.</p>`}
     <label class="btn" style="flex-direction:row">Import sales CSV<input id="sales-file" type="file" accept=".csv,text/csv" hidden></label>
     ${S.err.sales?`<div class="notice err">${esc(S.err.sales)}</div>`:""}<p class="small">${S.sales.length?`${S.sales.length} monthly rows loaded.`:"No sales history loaded yet."}</p>
-    ${S.rounds.some(r => r.example||r.demo)||S.mills.some(m => m.example||m.demo)||S.outlooks.some(o => o.example||o.demo)?`<h3>Example data</h3><button class="danger" data-act="clear-examples">${S.draft.confirmClear?"Tap again to clear example rounds and figures":"Clear example rounds and figures"}</button>`:""}
+    ${isMaster() && (S.rounds.some(r => r.example||r.demo)||S.mills.some(m => m.example||m.demo)||S.outlooks.some(o => o.example||o.demo))?`<h3>Example data</h3><button class="danger" data-act="clear-examples">${S.draft.confirmClear?"Tap again to clear example rounds and figures":"Clear example rounds and figures"}</button>`:""}
   </section>`;
 }
 
@@ -1325,7 +1326,7 @@ function signInCard(){
   const people = S.users.filter(u => u.active !== false).sort((a,b) => String(clientName(a.client_id)||"~").localeCompare(String(clientName(b.client_id)||"~")) || String(a.role).localeCompare(String(b.role)) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
   const missing = people.filter(u => !normPhone(u.phone)).length, req = phoneRequired();
   return `<section class="card"><h2>Sign-in and phone numbers</h2>
-    <div class="toggle-row"><div><b>Require phone sign-in</b><div class="small muted">${req ? "On: everyone signs in with their mobile number and PIN. The name list is hidden." : "Off: people pick their name from the list. Use Login demo on the sign-in screen to preview the phone sign-in."}</div></div>
+    <div class="toggle-row"><div><b>Require phone sign-in</b><div class="small muted">${req ? "On: everyone signs in with their mobile number and PIN. The name list is hidden." : "Off: people pick their name from the list."}</div></div>
       <button class="switch" data-act="phone-required" aria-pressed="${req}">${S.draft.confirmPhoneReq ? "Tap to confirm" : req ? "On" : "Off"}</button></div>
     <div class="toggle-row"><div><b>Require a one-time code</b><div class="small muted">${otpRequired() ? "On: after the PIN, a 6-digit code goes to the person's WhatsApp (and email, if saved). It works for 5 minutes." : "Off: mobile number and PIN are enough."}</div></div>
       <button class="switch" data-act="otp-required" aria-pressed="${otpRequired()}">${S.draft.confirmOtpReq ? "Tap to confirm" : otpRequired() ? "On" : "Off"}</button></div>
@@ -2181,8 +2182,6 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if(!b) return;
   const a = b.dataset.act, d = S.draft;
   if(await v3Click(a, b, d)) return;
-  if(a === "vmode"){ store.set("tarazu.vmode", b.dataset.k); applyVmode(); render(); return; }
-  if(a === "uiv"){ UIV = b.dataset.k; V2 = UIV !== "v1"; V3 = UIV === "v3"; store.set("tarazu.ui", UIV); applyUiv(); S.draft = {}; if(!V3 && ["sales","comment","poll","poll-new"].includes(S.route.name)) S.route = {name:"home"}; render(); toast("Showing " + UIV.toUpperCase()); return; }
   if(a === "login-demo"){ S.route = {name:"phone-login"}; S.err = {}; S.draft = {}; render(); return; }
   if(a === "login-back"){ S.route = {name:"home"}; S.err = {}; S.draft = {}; render(); return; }
   if(a === "stance"){ S.err.view = ""; if(!(b.dataset.k === "some" && d.stance === "some")) d.sell_pct = ({sell:100, some:50, hold:0})[b.dataset.k]; d.stance = b.dataset.k; render(); return; }

@@ -9,7 +9,7 @@ if ($u === '/' ) $u = '/index.html';
 $f = getenv('WEBROOT') . $u;
 if (!is_file($f)) { http_response_code(404); exit; }
 if (str_ends_with($f, '.php')) { chdir(dirname($f)); require $f; exit; }
-$types = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript', 'png' => 'image/png', 'webmanifest' => 'application/manifest+json'];
+$types = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript', 'png' => 'image/png', 'webmanifest' => 'application/manifest+json', 'woff2' => 'font/woff2'];
 if (str_ends_with($f, '.html')) {
   /* same Content-Security-Policy as web/.htaccess, so tests catch anything the policy would break */
   preg_match('#Content-Security-Policy "([^"]+)"#', file_get_contents(__DIR__ . '/../web/.htaccess'), $m);

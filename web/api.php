@@ -407,126 +407,6 @@ function run_schedule(bool $dry, ?string $at = null): array {
   return ['at' => $now->format(DATE_ATOM), 'cycle' => $cycle, 'switches' => $sw, 'plan' => $plan];
 }
 
-/* Demo mode: while config/demo is switched on, the day writes itself from a script (DATA_DIR/demo_story.json).
-   10 AM the manager posts the round, advisors answer through the day, noon outlooks, comments and polls come in,
-   the owner decides after the close and the sales are lifted in the evening. Rates follow the live spot.
-   Holidays in the script get no round. Everything is marked demo:true and written straight to the database, so no notifications go out. */
-function demo_r(string $k): float { return (crc32($k) % 100000) / 100000; }
-function demo_pick(array $a, string $k) { return $a[(int)floor(demo_r($k) * count($a)) % count($a)]; }
-function demo_story(): ?array { static $s = false; if ($s === false) { $f = DATA_DIR . '/demo_story.json'; $s = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: null) : null; } return $s; }
-function demo_fmt(float $n): string { $s = (string)(int)round($n); if (strlen($s) <= 3) return $s; $h = substr($s, 0, -3); $t = substr($s, -3); $h = preg_replace('/\B(?=(\d{2})+(?!\d))/', ',', $h); return $h . ',' . $t; }
-function demo_tick(): void {
-  $cfg = get_doc('config/demo'); if (!$cfg || empty($cfg['enabled'])) return;
-  $story = demo_story(); if (!$story) return;
-  $tz = new DateTimeZone('Asia/Kolkata'); $now = new DateTimeImmutable($GLOBALS['DEMO_AT'] ?? 'now', $tz); $ts = $now->getTimestamp();
-  $day = $now->modify('-3 hours')->format('Y-m-d');
-  if ($day > (string)($cfg['until'] ?? '') || $day < (string)($cfg['from'] ?? '')) return;
-  $cid = (string)($cfg['client'] ?? 'nirani'); $C = "clients/$cid";
-  $at = fn(int $min) => (new DateTimeImmutable($day . ' 00:00', $tz))->modify("+$min minutes");
-  $iso = fn(DateTimeImmutable $d) => $d->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.000\Z');
-  $due = fn(int $min) => $at($min)->getTimestamp() <= $ts;
-  $mills = docs_under("$C/mills");
-  // crushing output, once a day at 6 AM (the mills crush through holidays too)
-  if ($due(360) && once("demo:prod:$cid:$day", false)) {
-    foreach ($story['crush'] ?? [] as $mid => $q) if (isset($mills[$mid]) && $q > 0) { $mills[$mid]['stock_wh'] = (float)($mills[$mid]['stock_wh'] ?? 0) + $q; put_doc("$C/mills/$mid", $mills[$mid]); }
-  }
-  $S = $story['days'][$day] ?? null; if (!$S || in_array($day, $story['holidays'] ?? [], true)) return;
-  // live spot: Karnataka, Maharashtra and UP M/30 from the latest market fetch
-  $mk = get_doc('config/market') ?? []; $tr = array_values(array_filter($mk['trend'] ?? [], fn($p) => !empty($p['karnataka_m30'])));
-  $ka = $tr ? (float)end($tr)['karnataka_m30'] : 5300;
-  $trm = array_values(array_filter($mk['trend'] ?? [], fn($p) => !empty($p['maharashtra_m30']))); $mh = $trm ? (float)end($trm)['maharashtra_m30'] : $ka - 200;
-  $up = $ka + 125; foreach (($mk['spot']['exmill'] ?? []) as $row) if (stripos((string)($row['state'] ?? ''), 'uttar') !== false && !empty($row['m30']['mid'])) $up = (float)$row['m30']['mid'];
-  $rid = 'r' . str_replace('-', '', $day);
-
-  // 10 AM: the mill manager posts the round
-  if ($due((int)$S['created']) && once("demo:round:$cid:$day", false) && !get_doc("$C/rounds/$rid")) {
-    $rm = []; $left = 0; // working days left this month, today included (Mon-Sat, not holidays)
-    for ($t = new DateTimeImmutable($day, $tz); $t->format('m') === substr($day, 5, 2); $t = $t->modify('+1 day')) if ((int)$t->format('N') <= 6 && !in_array($t->format('Y-m-d'), $story['holidays'] ?? [], true)) $left++;
-    foreach ($mills as $mid => $m) {
-      $bq = max(0, (float)($m['quota'] ?? 0) - (float)($m['sold_qty'] ?? 0));
-      $w = min(floor($bq * (float)$S['wf'] * 0.30 / 100) * 100, floor(max(0, (float)($m['stock_wh'] ?? 0) - (float)($m['sold_qty'] ?? 0)) / 100) * 100);
-      $rm[] = ['id' => $mid, 'unit_no' => $m['unit_no'] ?? 0, 'name' => $m['name'] ?? $mid, 'code' => $m['code'] ?? '', 'state' => $m['state'] ?? 'KA', 'stock_wh' => (float)($m['stock_wh'] ?? 0), 'quota' => (float)($m['quota'] ?? 0), 'sold_qty' => (float)($m['sold_qty'] ?? 0), 'sold_avg_price' => (float)($m['sold_avg_price'] ?? 0), 'balance_quota' => $bq, 'wish_to_sell' => $w];
-    }
-    usort($rm, fn($a, $b) => $a['unit_no'] <=> $b['unit_no']);
-    $ask = (int)(round(($ka + (int)$S['ask_off']) / 10) * 10); $bid = (int)(round(($ka + (int)($S['bid_off'] ?? 0)) / 10) * 10);
-    $sum = fn($k) => array_sum(array_column($rm, $k));
-    $note = strtr((string)$S['note'], ['{bal}' => demo_fmt($sum('balance_quota')), '{quota}' => demo_fmt($sum('quota')), '{stock}' => demo_fmt($sum('stock_wh') - $sum('sold_qty')), '{days}' => (string)$left, '{bid}' => demo_fmt($bid)]);
-    put_doc("$C/rounds/$rid", ['title' => 'Round of ' . (new DateTimeImmutable($day, $tz))->format('j M'), 'created_by' => 'manager', 'created_at' => $iso($at((int)$S['created'])), 'valid_until' => $iso($at(960)),
-      'band_min' => $ask - 40, 'band_max' => $ask + 40, 'ask_rate' => $ask, 'floor_rate' => $ask - 40, 'flags' => $S['flags'] ?? [], 'cash_need' => in_array('cash', $S['flags'] ?? [], true) ? 'urgent' : 'moderate',
-      'note' => $note, 'status' => 'open', 'demo' => true, 'bid' => $bid, 'rates' => ['KA' => $ask, 'MH' => (int)(round($mh / 5) * 5), 'BR' => (int)(round(($up - 40) / 5) * 5)], 'mills' => $rm]);
-  }
-  $round = get_doc("$C/rounds/$rid");
-  // advisors answer through the day (an advisor who has already answered in person is left alone)
-  if ($round && ($round['status'] ?? '') !== 'decided') {
-    $ask = (int)$round['ask_rate'];
-    foreach ($S['views'] as $v) {
-      $pid = $v['pid']; if (!$due((int)$v['at']) || !once("demo:view:$cid:$day:$pid", false) || get_doc("$C/rviews/{$rid}__$pid")) continue;
-      $pct = (int)$v['sell_pct']; $em = $v['expected_move'] ?? null;
-      $tgt = $pct <= 0 ? $ask + ($em && $em > 0 ? (int)(round($em / 10) * 10) : 60) : ($pct >= 75 ? $ask - 10 * (int)floor(demo_r("tr:$day:$pid") * 3) : $ask + ($v['direction'] === 'up' ? 20 : 0));
-      $when = $iso($at((int)$v['at']));
-      $doc = ['round_id' => $rid, 'panelist_id' => $pid, 'stance' => $v['stance'], 'direction' => $v['direction'], 'sell_pct' => $pct, 'target_rate' => $tgt, 'rest' => 'hold', 'lots' => 4, 'interval_days' => 3,
-        'horizon_months' => round(((int)($v['move_days'] ?? 30) ?: 30) / 30, 3), 'overrides' => (object)[], 'reasons' => (object)($v['reasons'] ?: []), 'conviction' => $v['conviction'], 'note' => $v['note'], 'voice' => $v['voice'],
-        'updated_at' => $when, 'versions' => [['sell_pct' => $pct, 'target_rate' => $tgt, 'at' => $when, 'kind' => 'first', 'change_reason' => '']], 'demo' => true,
-        'move_range' => $v['move_range'], 'move_days' => $v['move_days'], 'expected_move' => $em];
-      if (!empty($v['move_unit'])) $doc['move_unit'] = $v['move_unit'];
-      put_doc("$C/rviews/{$rid}__$pid", $doc);
-      if (!empty($v['outlook']) && !get_doc("$C/outlooks/{$day}__$pid")) {
-        $o = ['day' => $day, 'panelist_id' => $pid, 'stance' => $v['stance'], 'sell_pct' => $pct, 'direction' => $v['direction'], 'note' => '', 'voice' => null, 'created_at' => $when, 'updated_at' => $when, 'edits' => 0, 'demo' => true, 'move_range' => $v['move_range'], 'move_days' => $v['move_days'], 'expected_move' => $em];
-        put_doc("$C/outlooks/{$day}__$pid", $o);
-      }
-    }
-  }
-  // comments
-  foreach ($S['comments'] ?? [] as $i => $c) {
-    if (!$due((int)$c['at']) || !once("demo:comment:$cid:$day:$i", false)) continue;
-    put_doc("$C/comments/" . str_replace('-', '', $day) . $i . '__' . $c['pid'], ['panelist_id' => $c['pid'], 'text' => $c['text'], 'voice' => $c['voice'], 'created_at' => $iso($at((int)$c['at'])), 'demo' => true]);
-  }
-  // poll at 11 AM, votes through the day
-  if (!empty($S['poll']) && $round) {
-    $pp = 'p' . str_replace('-', '', $day);
-    if ($due(660) && once("demo:poll:$cid:$day", false) && !get_doc("$C/polls/$pp")) {
-      put_doc("$C/polls/$pp", ['question' => str_replace('{bid}', demo_fmt((float)($round['bid'] ?? $round['ask_rate'])), (string)$S['poll']['question']), 'options' => $S['poll']['options'], 'note' => $S['poll']['note'], 'created_by' => 'manager', 'created_at' => $iso($at(660)), 'closes_at' => $iso($at(960)), 'round_id' => $rid, 'demo' => true]);
-    }
-    if (get_doc("$C/polls/$pp")) foreach ($S['poll']['votes'] as $pv) {
-      if (!$due((int)$pv['at']) || !once("demo:pvote:$cid:$day:{$pv['pid']}", false) || get_doc("$C/pvotes/{$pp}__{$pv['pid']}")) continue;
-      put_doc("$C/pvotes/{$pp}__{$pv['pid']}", ['poll_id' => $pp, 'panelist_id' => $pv['pid'], 'choice' => $pv['choice'], 'comment' => $pv['comment'], 'at' => $iso($at((int)$pv['at'])), 'demo' => true]);
-    }
-  }
-  // after the close: the owner's decision (unless the owner has decided in person), then the evening sales
-  $round = get_doc("$C/rounds/$rid");
-  if ($round && !empty($round['demo']) && ($round['status'] ?? '') !== 'decided' && $due((int)$S['decision']['at']) && once("demo:close:$cid:$day", false)) {
-    $pct = (int)$S['decision']['pct']; $dm = []; $tq = 0; $val = 0; $rates = $round['rates'] ?? [];
-    foreach ($round['mills'] ?? [] as $m) {
-      $q = (int)min(round((float)$m['wish_to_sell'] * $pct / 100 / 100) * 100, (float)$m['wish_to_sell']);
-      $st = $m['state'] ?? 'KA'; $rate = (int)($rates[$st] ?? $round['ask_rate']);
-      if ($st === 'KA') { $rate = in_array('buyer', $round['flags'] ?? [], true) && in_array($m['id'], ['unit1', 'unit2'], true) ? (int)($round['bid'] ?? $rate) : $rate - 10 * (int)floor(demo_r("dk:$day") * 3); if (in_array($m['id'], ['unit7', 'unit8'], true)) $rate += 15; }
-      $dm[$m['id']] = ['qty' => $q, 'rate' => $rate]; $tq += $q; $val += $q * $rate;
-    }
-    $round['status'] = 'decided';
-    $round['decision'] = ['mills' => (object)$dm, 'total_qty' => $tq, 'avg_rate' => $tq ? (int)round($val / $tq) : null, 'note' => $S['decision']['note'], 'by' => 'owner', 'at' => $iso($at((int)$S['decision']['at'])), 'demo' => true];
-    put_doc("$C/rounds/$rid", $round);
-  }
-  $round = get_doc("$C/rounds/$rid");
-  if ($round && ($round['status'] ?? '') === 'decided' && !empty($round['decision']['demo']) && $due((int)$S['decision']['at'] + 30) && once("demo:sales:$cid:$day", false)) {
-    $mills = docs_under("$C/mills"); $n = 0;
-    foreach (($round['decision']['mills'] ?? []) as $mid => $x) {
-      $q = (int)($x['qty'] ?? 0); if ($q <= 0 || !isset($mills[$mid])) continue; $m = $mills[$mid]; $st = $m['state'] ?? 'KA';
-      $parts = ($q < 6000 || demo_r("sp:$day:$mid") < 0.4) ? [$q] : [(int)(round($q * 0.6 / 100) * 100), $q - (int)(round($q * 0.6 / 100) * 100)];
-      foreach ($parts as $k => $pq) {
-        $buyer = ($k === 0 && $st === 'KA' && in_array('buyer', $round['flags'] ?? [], true)) ? 'Hyderabad trader' : demo_pick($story['buyers'][$st] ?? ['Trader'], "by:$day:$mid:$k");
-        put_doc("$C/ledger/{$day}_{$mid}_$k", ['date' => $day, 'mill_id' => $mid, 'mill_code' => $m['code'] ?? '', 'mill_name' => $m['name'] ?? $mid, 'qty' => $pq, 'rate' => (int)$x['rate'], 'grade' => 'M/30', 'buyer' => $buyer, 'source' => 'demo', 'created_at' => $iso($at((int)$S['decision']['at'] + 30 + $n++ * 4)), 'demo' => true]);
-      }
-      $sold = (float)($m['sold_qty'] ?? 0); $avg = (float)($m['sold_avg_price'] ?? 0); $ns = $sold + $q;
-      $m['sold_qty'] = $ns; $m['sold_avg_price'] = $ns ? (int)round(($avg * $sold + (int)$x['rate'] * $q) / $ns) : 0;
-      $m['wish_to_sell'] = max(0, floor(max(0, (float)($m['quota'] ?? 0) - $ns) * 0.35 / 100) * 100); $m['updated_at'] = $iso($now);
-      put_doc("$C/mills/$mid", $m);
-    }
-  }
-}
-
-/* routes */
-
-/* sign-in lockout helpers (shared by PIN, phone and code checks) */
 function login_guard(array $keys): void {
   $now = microtime(true);
   foreach ($keys as $k => $lim) { $st = db()->prepare('SELECT until FROM fails WHERE k=?'); $st->execute([$k]); $x = (float)$st->fetchColumn();
@@ -589,7 +469,6 @@ function n8n_auth_header(): array { return defined('N8N_KEY') && N8N_KEY !== '' 
 if (!defined('TARAZU_LIB')) try {
   switch ($op) {
     case 'sync': {
-      try { demo_tick(); } catch (Throwable $e) { error_log('tarazu demo: ' . $e->getMessage()); }
       $u = me(); $since = (float)($in['since'] ?? 0); $now = microtime(true);
       $st = db()->prepare('SELECT path, data, deleted FROM docs WHERE updated > ? ORDER BY updated'); $st->execute([$since]);
       $docs = [];
