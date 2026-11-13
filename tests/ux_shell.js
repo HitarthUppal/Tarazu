@@ -25,6 +25,11 @@ const ROLES = [['m1', 'master'], ['o1', 'owner'], ['mg1', 'manager'], ['p1', 'pa
     await page.screenshot({ path: `${OUT}/signin-${vp.name}.png` });
     ok(`${vp.name} sign-in: Overpass font`, /Overpass/.test(await page.evaluate(() => getComputedStyle(document.body).fontFamily)));
     ok(`${vp.name} sign-in: Overpass actually loaded`, await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px Overpass'); }));
+    await page.fill('#ph-num', '98765');
+    ok(`${vp.name} sign-in: digit counter shows 5/10`, /5\/10/.test(await page.textContent('#ph-count')));
+    await page.fill('#ph-num', '9876543210');
+    ok(`${vp.name} sign-in: counter confirms 10 digits`, /10\/10/.test(await page.textContent('#ph-count')));
+    await page.fill('#ph-num', '');
     ok(`${vp.name} sign-in: no layout toggle`, await page.locator('.vt, [data-act="vmode"]').count() === 0);
     await ctx.close();
   }
@@ -55,12 +60,22 @@ const ROLES = [['m1', 'master'], ['o1', 'owner'], ['mg1', 'manager'], ['p1', 'pa
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         ok(`${tag}: no sideways scrolling`, overflow <= 1, overflow);
       }
+      if (role === 'owner' || role === 'manager') {
+        ok(`${tag}: headline figures at the top`, await page.evaluate(() => { const k = document.querySelector('#main .kpis'), c = document.querySelector('#main .card'); return !!k && !!c && !!(k.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING); }));
+        ok(`${tag}: four figures`, await page.locator('#main .kpi').count() === 4);
+      }
       await page.screenshot({ path: `${OUT}/${tag}-home.png` });
       // every tab renders
       const routes = await page.$$eval('nav.tabs button[data-act="go"]', bs => bs.map(b => [b.dataset.route, b.textContent.trim()]));
       for (const [r, label] of routes.slice(1)) {
         await page.click(`nav.tabs button[data-route="${r}"]`); await page.waitForTimeout(500);
         ok(`${tag}: ${label} tab renders`, (await page.textContent('#main')).trim().length > 20);
+        if (r === 'sales') {
+          ok(`${tag}: sales has one period picker, no chip row`, await page.locator('#s-period').count() === 1 && await page.locator('[data-act="sp"][aria-pressed]').count() === 0);
+          ok(`${tag}: sales shows a record count`, await page.locator('#main .count').count() === 1);
+          await page.selectOption('#s-period', '1y'); await page.waitForTimeout(300);
+          ok(`${tag}: period picker applies`, await page.$eval('#s-period', e => e.value) === '1y');
+        }
         if (vp.name === 'phone') await page.screenshot({ path: `${OUT}/${tag}-${r}.png` });
       }
       // account sheet
