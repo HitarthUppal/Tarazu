@@ -396,7 +396,7 @@ body.phone .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
     <div class="ab-title" id="ab-title"></div>
   </header>
   <main id="main" class="wrap" aria-live="polite">
-    <div class="skel" aria-label="Loading Tarazu"><div class="sk sk-h"></div><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-row"></div></div>
+    <div class="skel" aria-label="Loading Tarazu" id="boot-skel"><div class="sk sk-h"></div><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-row"></div></div>
   </main>
 </div>
 <nav class="tabs" id="tabs" hidden></nav>
@@ -613,6 +613,7 @@ function subscribeClient(cid){
 function restoreMe(){
   const id = store.get("tarazu.me"); const u = S.users.find(x => x.id === id && x.active !== false);
   if(HOSTED && u && !store.get("tarazu.token")){ S.me = null; return; }
+  if(HOSTED && u && S.db && S.db._signedIn === false){ store.set("tarazu.token", null); S.me = null; return; } /* tarazu-boot v1 */
   S.me = u || null;
   if(S.me) setTimeout(applyHash, 0);
   if(S.me) subscribeClient(isMaster() ? (store.get("tarazu.client") || (S.clients[0]||{}).id || "nirani") : S.me.client_id);
@@ -765,6 +766,8 @@ function setTabs(items){
   t.innerHTML = navBrand() + items.map(([name,label,badge]) => `<button data-act="go" data-route="${name}" ${cur===name?'aria-current="page"':""}><span class="ti">${svg(TAB_ICON[label] || name)}</span><span class="tl">${esc(label)}</span>${badge?`<span class="badge" aria-label="${badge} waiting">${badge}</span>`:""}</button>`).join("");
 }
 function render(){ renderCore(); shellAfter(); }
+setTimeout(() => { const k = document.getElementById("boot-skel"); if(k && !S.loaded.users) k.outerHTML = `<div class="notice" style="margin-top:20px"><b>Still connecting to Tarazu.</b><p class="small" style="margin:6px 0 12px">Your connection may be slow, or the server is busy.</p><button class="primary" data-act="boot-retry">Try again</button></div>`; }, 10000);
+document.addEventListener("click", e => { if(e.target.closest && e.target.closest('[data-act="boot-retry"]')) location.reload(); });
 function renderCore(){
   if(siteGuard()) return;
   const who = $("#who");
@@ -2379,7 +2382,7 @@ async function enablePush(){
 
 /* ---------- hosted data layer: same interface as the artifact store, over api.php ---------- */
 function restDb(api){
-  const cache = new Map(), subs = new Set(); let since = 0, timer = null, ready = false;
+  const cache = new Map(), subs = new Set(); let since = 0, timer = null, ready = false; const api_ = {signedIn: null};
   const call = async (op, body) => {
     const r = await fetch(api + "?op=" + op, {method:"POST", headers:{"Content-Type":"application/json", "X-Token":store.get("tarazu.token")||""}, body:JSON.stringify(body||{})});
     const j = await r.json().catch(() => ({}));
@@ -2390,13 +2393,14 @@ function restDb(api){
   const parent = p => p.split("/").slice(0,-1).join("/");
   const notify = () => subs.forEach(fn => { try{ fn(); }catch(e){} });
   async function sync(){
-    try{ const j = await call("sync", {since}); (j.docs||[]).forEach(d => { if(d.deleted) cache.delete(d.path); else cache.set(d.path, d.data); }); since = j.now || since; if((j.docs||[]).length || !ready){ ready = true; notify(); } }
+    try{ const j = await call("sync", {since}); (j.docs||[]).forEach(d => { if(d.deleted) cache.delete(d.path); else cache.set(d.path, d.data); }); since = j.now || since; if(typeof j.signed_in === "boolean") api_.signedIn = j.signed_in; if((j.docs||[]).length || !ready){ ready = true; notify(); } }
     catch(e){ if(!ready){ ready = true; notify(); } }
   }
   function start(){ if(timer) return; sync(); timer = setInterval(sync, 8000); document.addEventListener("visibilitychange", () => { if(!document.hidden) sync(); }); }
   const snap = p => ({id:p.split("/").pop(), exists:cache.has(p), data:() => cache.get(p)});
   return {
     _call: call,
+    get _signedIn(){ return api_.signedIn; },
     async _resync(){ since = 0; cache.clear(); await sync(); notify(); },
     collection(path){ return { onSnapshot(next){ const run = () => next({docs:[...cache.keys()].filter(k => parent(k) === path).map(snap)}); subs.add(run); start(); if(ready) run(); return () => subs.delete(run); } }; },
     doc(path){ return {
