@@ -27,13 +27,20 @@ const tabs = p => p.$$eval('nav.tabs button[data-act="go"]', bs => bs.map(b => b
   ok('owner: Decision needed comes first', await p.evaluate(() => { const c = document.querySelector('#main .card'); return !!c && c.classList.contains('needs'); }));
   ok('owner: Decide button opens the waiting round', await p.locator('#main .card.needs [data-act="open"][data-id="r4"]').count() === 1);
   ok('owner: Market mood is gone', !/Market mood/.test(t));
-  ok('owner: Latest panel read is shown', /Latest panel read/.test(t));
+  ok('owner: home has a short From the panel card', /From the panel/.test(t) && !/Latest panel read/.test(t));
+  ok('owner: open poll and new comment surface on home', /Poll: Will the December quota/.test(t) && /Maharashtra mills/.test(t));
   ok('owner: no repeated cards', !/Advisory rounds awaiting you|Sales this month/.test(t), t.match(/Advisory rounds awaiting you|Sales this month/));
   ok('owner: no market block on home', !/Domestic sugar news|ChiniMandi Magazine/.test(t));
   ok('owner: Market tab exists', (await tabs(p)).includes('Market'), await tabs(p));
   ok('owner: month comparison says which days', /vs 1–\d+ /.test(t) || !/vs /.test(t), (t.match(/vs [^ ]+ [A-Za-z]+/) || [])[0]);
   await p.click('nav.tabs button[data-route="market"]'); await p.waitForTimeout(500);
   ok('owner: Market tab holds the market content', /Domestic sugar news/.test(await text(p)));
+  ok('owner: Panel badge counts new comments', (await p.textContent('nav.tabs button[data-route="panel"]')).includes('1'));
+  await p.click('nav.tabs button[data-route="panel"]'); await p.waitForTimeout(600); t = await text(p);
+  ok('owner Panel: read, polls, comments and scorecard together', /Latest panel read/.test(t) && /Polls/.test(t) && /Advisor comments/.test(t) && /Advisor scorecard/.test(t));
+  await p.click('nav.tabs button[data-route="home"]'); await p.waitForTimeout(500);
+  ok('owner: after opening Panel, the badge clears', !(/\d/.test(await p.textContent('nav.tabs button[data-route="panel"]'))));
+  ok('owner: after opening Panel, old comments leave the home', !/Maharashtra mills/.test(await text(p)));
   ok('owner: no script errors', p.errs.length === 0, p.errs); await p.context().close();
 
   // owner deciding on a phone
@@ -51,6 +58,10 @@ const tabs = p => p.$$eval('nav.tabs button[data-act="go"]', bs => bs.map(b => b
   const close = await p.$eval('#rd-valid', e => new Date(e.value).getTime());
   const hrs = (close - Date.now()) / 3600e3; ok('manager: a new round stays open about 24 hours', hrs > 23.5 && hrs < 24.5, hrs);
   ok('manager: Market tab exists', (await tabs(p)).includes('Market'), await tabs(p));
+  ok('manager: Panel tab exists', (await tabs(p)).includes('Panel'), await tabs(p));
+  await p.click('nav.tabs button[data-route="panel"]'); await p.waitForTimeout(500);
+  ok('manager Panel: polls and comments, no reads', /Polls/.test(await text(p)) && !/Latest panel read/.test(await text(p)));
+  await p.click('nav.tabs button[data-route="home"]'); await p.waitForTimeout(500);
   ok('manager: no script errors', p.errs.length === 0, p.errs); await p.context().close();
   p = await open(b, 'mg1', 1366); ok('manager desktop: full mill table with sold columns read-only', await p.locator('#main table.compact input[data-k="wish_to_sell"]').count() === 10 && await p.locator('input[data-k="sold_qty"]').count() === 0); await p.context().close();
 
@@ -79,8 +90,13 @@ const tabs = p => p.$$eval('nav.tabs button[data-act="go"]', bs => bs.map(b => b
 
   // owner sees the new read, and can change the cycle
   p = await open(b, 'o1'); t = await text(p);
-  ok('owner: the new read shows in Latest panel read', /Latest panel read[\s\S]*Vikas Joshi[\s\S]*Hold/.test(t));
-  await p.click('nav.tabs button[data-route="admin"]'); await p.waitForTimeout(500);
+  ok('owner: the new read is counted on home', /Panel read[^\n]*\d of 5/.test(t));
+  await p.click('nav.tabs button[data-route="panel"]'); await p.waitForTimeout(500);
+  ok('owner Panel: the new read shows with its stance', /Latest panel read[\s\S]*Vikas Joshi[\s\S]*Hold/.test(await text(p)));
+  ok('owner: no Admin tab; Panel tab instead', !(await tabs(p)).includes('Admin') && (await tabs(p)).includes('Panel'), await tabs(p));
+  await p.click('#who [data-act="profile"]'); await p.waitForTimeout(300);
+  await p.click('#sheet [data-route="admin"]'); await p.waitForTimeout(600);
+  ok('owner: Review and settings opens from the account sheet', (await p.textContent('#ab-title')).trim() === 'Review and settings', await p.textContent('#ab-title'));
   ok('owner admin: panel read settings present', await p.locator('#read-form').count() === 1);
   await p.fill('#rd-every', '3'); await p.click('#read-form button[type="submit"]'); await p.waitForTimeout(700);
   ok('owner admin: cycle saved', /Current read:/.test(await text(p)) && JSON.parse(execFileSync('python3', ['-c', `import sqlite3;c=sqlite3.connect('/tmp/tz-local/data/tarazu.sqlite');print(c.execute("select data from docs where path='clients/nirani/config/mill'").fetchone()[0])`]).toString()).read_every === 3);

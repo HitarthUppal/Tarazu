@@ -418,6 +418,14 @@ body.phone table.stack tfoot td:first-child{grid-column:auto}
 .mc-wish input{margin-top:4px}
 .mcard details summary{color:var(--muted);cursor:pointer}
 .mcard details .grid2{margin-top:8px}
+
+/* tarazu-panel v1 */
+.fp-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+.fp-row > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-row > span:last-child{flex:none;white-space:nowrap}
+.fp-btn{width:100%;background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;font:inherit;color:inherit;text-align:left;min-height:44px;cursor:pointer}
+.fp-c{padding:10px 0;border-top:1px solid var(--line)}
+.fp-c p{margin:4px 0 0}
 </style>
 
 <div class="wrap" id="app">
@@ -706,12 +714,13 @@ const ICON = {
   market:'<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
   master:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
   client:'<path d="M4 21V5l8-2v18M12 9h8v12M8 8v.01M8 12v.01M8 16v.01M16 13v.01M16 17v.01"/>',
+  panel:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.9.3 5 2.7 5 5.8"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>'
 };
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ICON.home}</svg>`;
-const TAB_ICON = {Home:"home", Mills:"mills", Today:"today", Rounds:"rounds", Sales:"sales", Admin:"admin", Market:"market", Master:"master", Client:"client"};
-const TITLES = {round:"Round", poll:"Poll", "poll-new":"New poll", comment:"Comments", admin:"Admin", client:"Client", master:"Master admin", market:"Market", sales:"Sales", rounds:"Rounds"};
+const TAB_ICON = {Panel:"panel", Home:"home", Mills:"mills", Today:"today", Rounds:"rounds", Sales:"sales", Admin:"admin", Market:"market", Master:"master", Client:"client"};
+const TITLES = {panel:"Panel", admin:"Review and settings", round:"Round", poll:"Poll", "poll-new":"New poll", comment:"Comments", client:"Client", master:"Master admin", market:"Market", sales:"Sales", rounds:"Rounds"};
 function initials(n){ return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"; }
 function navBrand(){
   return `<div class="nav-brand">${SITE.client ? `<img class="cl" src="${esc(SITE.client)}-logo.png" alt="">` : ""}<span class="tz-word"><b>तराज़ू</b><i>Tarazu</i></span><small>Sugar Sale Intelligence System</small></div>`;
@@ -741,13 +750,13 @@ function sheetHtml(){
   const native = !!window.TARAZU_NATIVE;
   let lock = "On"; try{ lock = localStorage.getItem("tz_bio_lock") === "off" ? "Off" : "On"; }catch(e){}
   const webPush = HOSTED && !native && "Notification" in window && "serviceWorker" in navigator;
-  const secRoute = isMaster() ? "master" : (u.role === "owner" ? "admin" : null);
+  const secRoute = isMaster() ? "master" : (u.role === "owner" ? "admin" : null), secLabel = isMaster() ? "Security and activity" : "Review and settings";
   return `<div class="who"><span class="avatar" aria-hidden="true">${esc(initials(u.name))}</span><div><b>${esc(u.name)}</b><div class="small muted">${esc(roleLabel(u.role))}${S.client && !isMaster() ? " · " + esc(clientName(S.client)) : ""}</div></div></div>
     ${viaMaster() ? `<div class="notice small">You are viewing as ${esc(u.name)}. <button class="sm" data-act="back-master">Back to master</button></div>` : ""}
     <div>
       ${webPush ? `<button class="row-btn" data-act="push"><span>Notifications on this device</span><span>${pushLabel().replace("🔔 ", "")}</span></button>` : ""}
       ${native ? `<button class="row-btn" data-act="bio-lock"><span>Lock with Face ID or fingerprint</span><span>${lock}</span></button>` : ""}
-      ${secRoute ? `<button class="row-btn" data-act="go" data-route="${secRoute}"><span>Security and activity</span><span>›</span></button>` : ""}
+      ${secRoute ? `<button class="row-btn" data-act="go" data-route="${secRoute}"><span>${secLabel}</span><span>›</span></button>` : ""}
       <button class="row-btn" data-act="sec-logout-all"><span>Sign out my other devices</span><span>›</span></button>
       <button class="row-btn danger" data-act="logout"><span>Sign out</span><span></span></button>
     </div>
@@ -812,8 +821,9 @@ function renderCore(){
   if(!S.loaded.users) return;
   if(!S.me){ setTabs(null); m.innerHTML = phoneLoginView(); if(S.draft.focusOtp){ S.draft.focusOtp = false; setTimeout(() => { const e = $("#ph-otp"); if(e) e.focus(); }, 0); } return; }
   const r = S.me.role, rt = S.route.name;
+  if(rt === "panel" && r !== "panelist") markPanelSeen();
   if(r === "manager"){
-    setTabs(V3 ? [["home","Mills"],["rounds","Rounds"],["sales","Sales"],["market","Market"]] : [["home","Mills"],["rounds","Rounds"]]);
+    setTabs(V3 ? [["home","Mills"],["rounds","Rounds"],["panel","Panel", panelBadge()],["sales","Sales"],["market","Market"]] : [["home","Mills"],["rounds","Rounds"]]);
     m.innerHTML = (V3 && v3Main(rt)) || (rt === "round" ? roundView() : rt === "rounds" ? roundsList() : managerHome());
   } else if(r === "panelist"){
     const pending = S.rounds.filter(x => isOpen(x) && !S.rviews.find(v => v.round_id===x.id && v.panelist_id===S.me.id)).length;
@@ -826,7 +836,7 @@ function renderCore(){
     m.innerHTML = rt === "client" ? clientAdminView() : masterView();
   } else {
     const awaiting = S.rounds.filter(x => x.status !== "decided").length;
-    setTabs(V3 ? [["home","Home"],["rounds","Rounds", awaiting],["sales","Sales"],["market","Market"],["admin","Admin"]] : [["home","Home"],["rounds","Rounds", awaiting],["admin","Admin"], ...(isMaster() ? [["master","Master"]] : [])]);
+    setTabs(V3 ? [["home","Home"],["rounds","Rounds", awaiting],["panel","Panel", panelBadge()],["sales","Sales"],["market","Market"]] : [["home","Home"],["rounds","Rounds", awaiting],["admin","Admin"], ...(isMaster() ? [["master","Master"]] : [])]);
     m.innerHTML = (V3 && v3Main(rt)) || rt === "round" ? ((V3 && v3Main(rt)) || roundView()) : rt === "rounds" ? roundsList() : rt === "admin" ? adminView() : (rt === "master" && isMaster()) ? masterView() : ownerHome();
   }
   maybeRefreshMarket();
@@ -1411,13 +1421,12 @@ function adminView(){
   const trendAvg = (() => { const t = ((S.market&&S.market.trend)||[]).filter(x => x.karnataka_s30 && monthKey(x.date) === mk); return t.length ? t.reduce((s,x) => s + x.karnataka_s30, 0)/t.length : null; })();
   let outcome = 0, scored = 0;
   dec.forEach(r => { const p30 = r.price_after && num(r.price_after.d30); if(!p30) return; scored++; const wish = (r.mills||[]).reduce((s,m)=>s+num(m.wish_to_sell),0), sold = num(r.decision.total_qty), held = wish - sold, rate = num(r.decision.avg_rate)||p30, c = carry(rate,1); outcome += sold*(rate - p30 + c) + held*(p30 - rate - c); });
-  return `<div class="row between"><h1>Admin</h1><label style="flex-direction:row;align-items:center;gap:8px">Month<select id="ad-month">${(months.length?months:[mk]).map(m => `<option value="${m}" ${m===mk?"selected":""}>${esc(monthLabel(m))}</option>`).join("")}</select></label></div>
+  return `<div class="row between"><h1>Review and settings</h1><label style="flex-direction:row;align-items:center;gap:8px">Month<select id="ad-month">${(months.length?months:[mk]).map(m => `<option value="${m}" ${m===mk?"selected":""}>${esc(monthLabel(m))}</option>`).join("")}</select></label></div>
   ${rs.some(r => r.example)?`<div class="notice">This month includes example rounds so the console has something to show. Clear them under Management.</div>`:""}
   <section class="card"><h2>${esc(monthLabel(mk))} at a glance</h2>
     <div class="stat"><div><div class="n num">${rs.length}</div><div class="l">Advisory rounds</div></div><div><div class="n num">${dec.length}</div><div class="l">Decided</div></div>
       <div><div class="n num">${q(qty)}</div><div class="l">Quintals approved to sell</div></div><div><div class="n num">${qty?inr(val/qty):"–"}</div><div class="l">Avg approved rate${trendAvg?` · spot avg ${inr(trendAvg)}`:""}</div></div></div>
     <div class="readback ${outcome>=0?"good":"bad"}">${scored?`Against the S. Karnataka S/30 price 30 days after each decision, net of holding cost, this month's decisions ${outcome>=0?"saved":"cost"} about <b>${big(Math.abs(outcome))}</b> across ${scored} scored round${scored===1?"":"s"}.`:"Enter the S/30 price 15 and 30 days after each decision in the round log to score the month."}</div></section>
-  ${scorecard(dec)}
   <section class="card"><h2>Round log</h2><p class="small muted">Prices after are S. Karnataka S/30, entered until the live price feed fills them in.</p>
     <div class="tablewrap"><table><thead><tr><th>Date</th><th class="r">Wish</th><th>Panel</th><th>AI</th><th class="r">Approved</th><th class="r">Rate</th><th class="r">After 15d</th><th class="r">After 30d</th>${V3?"<th></th>":""}</tr></thead><tbody>
     ${rs.length?rs.map(r => { const vs = viewsFor(r.id), sp = splitOf(vs, r); return `<tr><td>${esc(fmtDay(r.created_at))}${r.example?" *":""}</td><td class="r">${q((r.mills||[]).reduce((s,m)=>s+num(m.wish_to_sell),0))}</td><td>${vs.length?`median ${Math.round(sp.medPct)}%`:"–"}</td><td>${r.brief&&r.brief.lean?esc(SIDE_LABEL[r.brief.lean.side]||""):r.brief?"Summary":"–"}</td><td class="r">${r.decision?q(r.decision.total_qty):"Open"}</td><td class="r">${r.decision&&r.decision.total_qty?inr(r.decision.avg_rate):"–"}</td>
@@ -1745,7 +1754,7 @@ function commentsFeed(){
   const cs = S.comments.slice().sort(byNewest), all = S.draft.allComments, shown = all ? cs : cs.slice(0, 5);
   return `<section class="card" id="comments"><div class="row between"><h2>Advisor comments</h2><span class="small muted">${cs.length ? cs.length + " in all" : ""}</span></div>
     ${cs.length ? `<div class="ledger">${shown.map(c => `<div><span><b>${esc(userName(c.panelist_id))}</b> <span class="small muted">${esc(fmtDate(c.created_at))}</span>${c.voice ? ` <span class="small muted">🎙 voice, ${esc(langName(c.voice.language))}</span>` : ""}${c.example ? ` <span class="chip ex">example</span>` : ""}<br>${esc(commentText(c))}${c.voice && c.voice.original && c.voice.language !== "en" ? `<br><span class="small muted">${esc(c.voice.original)}</span>` : ""}</span></div>`).join("")}</div>
-      ${cs.length > 5 ? `<button class="ghost" data-act="all-comments">${all ? "Show fewer" : `Show all ${cs.length}`}</button>` : ""}` : `<div class="empty">No comments yet. Advisors can send one any time from their Today screen.</div>`}</section>`;
+      ${cs.length > 5 ? `<button class="ghost" data-act="all-comments">${all ? "Show fewer" : `Show all ${cs.length}`}</button>` : ""}` : `<div class="empty">No comments yet. Advisors can send one any time from their Home screen.</div>`}</section>`;
 }
 function advisorCommentCard(){
   const mine = S.comments.filter(c => c.panelist_id === S.me.id).sort(byNewest).slice(0, 3);
@@ -2003,9 +2012,8 @@ function managerHomeV3(){
       <div class="row between"><span class="small"><b class="num">${qtl(wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills</span><button class="primary" type="submit" ${wish ? "" : "disabled"}>Send to the panel</button></div>
       ${wish ? "" : `<p class="small muted">Enter a wish-to-sell quantity for at least one mill in step 1 to send the round.</p>`}
     </form>
+    ${fromPanelCard()}
     ${kpiStrip()}
-    ${pollsCardMgmt()}
-    ${commentsFeed()}
   </div>${rail()}</div>`;
 }
 async function submitRoundV3(){
@@ -2063,18 +2071,46 @@ function ownerHomeV3(){
     ${decisionNeededCard()}
     ${kpiStrip()}
     ${last && !due.has(last.id) ? latestRoundCard() : ""}
-    ${panelReadCard()}
-    ${pollsCardMgmt()}
-    ${commentsFeed()}
+    ${fromPanelCard()}
     <section class="card"><div class="row between"><h2>Mill-wise position</h2><span class="small muted">${millsSorted().length} units</span></div>${millsTable(false)}</section>
   </div></div>`;
 }
+
+/* tarazu-panel v1: what the advisors say, in one place */
+const seenKey = () => "tz_seen_panel_" + (S.me ? S.me.id : "");
+function panelSeen(){ try{ return localStorage.getItem(seenKey()) || ""; }catch(e){ return ""; } }
+function markPanelSeen(){ try{ localStorage.setItem(seenKey(), new Date().toISOString()); }catch(e){} }
+function newComments(){ const seen = panelSeen(), cut = seen || new Date(Date.now() - 4 * 864e5).toISOString(); return S.comments.filter(c => String(c.created_at) > cut).sort(byNewest); }
+function panelBadge(){ return newComments().length; }
+function fromPanelCard(){
+  const owner = S.me.role !== "manager", open = S.polls.filter(pollOpen).sort(byNewest), fresh = newComments().slice(0, 3);
+  const per = readPeriod(), reads = readsFor(per.start), ps = panelists(), lean = leanOf(reads.map(o => ({stance:o.stance})));
+  const readLine = owner && ps.length ? `<div class="fp-row"><span>Panel read · ${esc(periodLabel(per))}</span><span><b>${reads.length} of ${ps.length}</b> in${lean ? ` · ${lean === "split" ? "split" : stChip(lean)}` : ""}</span></div>` : "";
+  if(!readLine && !open.length && !fresh.length) return "";
+  return `<section class="card"><div class="row between"><h2>From the panel</h2><button class="ghost" data-act="go" data-route="panel">Open Panel</button></div>
+    ${readLine}
+    ${open.map(pl => `<button class="fp-row fp-btn" data-act="open-poll" data-id="${esc(pl.id)}"><span>Poll: ${esc(pl.question)}</span><span><b>${votesFor(pl.id).length} of ${ps.length}</b> answered ›</span></button>`).join("")}
+    ${fresh.map(c => `<div class="fp-c"><b>${esc(userName(c.panelist_id))}</b> <span class="small muted">${esc(fmtDate(c.created_at))}</span><p class="small">${esc(commentText(c))}</p></div>`).join("")}
+    ${newComments().length > 3 ? `<p class="small muted" style="margin:0">${newComments().length - 3} more new comment${newComments().length - 3 > 1 ? "s" : ""} in Panel.</p>` : ""}</section>`;
+}
+function panelView(){
+  const owner = S.me.role !== "manager", since = new Date(Date.now() - 90 * 864e5).toISOString();
+  const dec = S.rounds.filter(r => r.status === "decided" && String(r.created_at) >= since);
+  return `<div class="layout"><div class="main">
+    ${owner ? panelReadCard() : ""}
+    ${pollsCardMgmt()}
+    ${commentsFeed()}
+    ${owner && dec.length ? scorecard(dec).replace("<h2>Advisor scorecard</h2>", "<h2>Advisor scorecard</h2><span class=\"small muted\">Last 90 days</span>") : ""}
+  </div></div>`;
+}
+
 function v3AdvisorTop(){ return advisorPollCards(); }
 
 /* ---------- routing and events for V3 ---------- */
 function v3Main(rt){
   if(rt === "sales") return salesView();
   if(rt === "market") return marketPage();
+  if(rt === "panel" && S.me.role !== "panelist") return panelView();
   if(rt === "comment" && S.me.role === "panelist") return commentCompose();
   if(rt === "poll") return pollView();
   if(rt === "poll-new" && S.me.role !== "panelist") return pollCompose();

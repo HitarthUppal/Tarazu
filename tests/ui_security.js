@@ -28,7 +28,7 @@ async function api(op, body, tok) {
     ok('session token is the new kind', /^tz1_/.test(tok || ''), tok);
     await page.screenshot({ path: `/tmp/tz-ui-${vp.name}-home.png` });
     fs.writeFileSync(`/tmp/tz-ui-${vp.name}-nav.txt`, await page.evaluate(() => [...document.querySelectorAll('[data-act],[data-tab],nav a,button')].slice(0, 80).map(e => (e.dataset.act || e.dataset.tab || '') + ':' + e.textContent.trim().slice(0, 30)).join('\n')));
-    await page.click('[data-act="go"]:has-text("Admin")'); await page.waitForTimeout(600);
+    await page.click('#who [data-act="profile"]'); await page.waitForTimeout(300); await page.click('#sheet [data-route="admin"]'); await page.waitForTimeout(600);
     const pins = await page.$$eval('input[data-k="pin"]', els => els.map(e => ({ v: e.value, ph: e.placeholder })));
     ok('PIN boxes are empty (PINs never sent)', pins.length > 0 && pins.every(p => p.v === ''), JSON.stringify(pins).slice(0, 200));
     ok('PIN boxes show set / not set', pins.every(p => /set|Set PIN/.test(p.ph)));
