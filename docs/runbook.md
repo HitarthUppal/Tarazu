@@ -38,7 +38,7 @@ Server-side push keys are files placed in `/home2/tarazu/tarazu_data/` by hand (
 4. Lock n8n the same hour: add the `X-Tarazu-Key` check to the Tarazu webhooks (API, Intelligence v2, Quota Sync), rotate the webhook paths, set the `HOOK_*` secrets, and redeploy. Until this is done, the old webhook addresses still work for anyone who copied them.
 5. In n8n, set the voice workflow to not save successful executions, so voice audio is not retained (the privacy policy says so).
 6. Move old report PDFs from `public_html/files/` to `tarazu_data/files/`. They still open from the old place meanwhile, but only through signed links.
-7. Add the cron job in cPanel: `*/15 * * * * php /home2/tarazu/public_html/cron.php >/dev/null 2>&1`. This runs notifications and the nightly encrypted backup.
+7. Cron job (`*/15 * * * * php /home2/tarazu/public_html/cron.php >/dev/null 2>&1`): the deploy workflow now adds it if it is missing. It runs notifications and the nightly encrypted backup. Check it under cPanel > Cron Jobs after the first deploy.
 8. In Master admin: switch the demo off, clear demo data, change default PINs, add everyone's mobile number and email. Then turn on **Require phone sign-in** and, once emails are in, **Require a one-time code**.
 9. Rotate the cPanel password (it was shared in chat earlier), delete temporary credentials, and turn on cPanel two-factor sign-in.
 

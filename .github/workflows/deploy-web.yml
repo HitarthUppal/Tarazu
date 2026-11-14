@@ -92,6 +92,21 @@ jobs:
           curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DOCROOT" -F "overwrite=1" "${ARGS[@]}" \
             "$HOST/execute/Fileman/upload_files" | tee /tmp/up.json | python3 -c "import json,sys; j=json.load(sys.stdin); print(j.get('data',{}).get('succeeded'), 'uploaded'); sys.exit(0 if j.get('status')==1 and not j.get('data',{}).get('failed') else 1)"
 
+      - name: Make sure the 15-minute cron job exists (notifications and nightly encrypted backup)
+        run: |
+          LINE="php $DOCROOT/cron.php >/dev/null 2>&1"
+          curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" \
+            "$HOST/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=Cron&cpanel_jsonapi_func=listcron" > /tmp/cron.json
+          if python3 -c "import json,sys; d=json.load(open('/tmp/cron.json'))['cpanelresult']['data']; sys.exit(0 if any('cron.php' in str(j.get('command','')) for j in d) else 1)"; then
+            echo "ok cron job already present"
+          else
+            curl -fsS -G -H "Authorization: cpanel $CP_USER:$CP_TOKEN" "$HOST/json-api/cpanel" \
+              --data-urlencode "cpanel_jsonapi_apiversion=2" --data-urlencode "cpanel_jsonapi_module=Cron" --data-urlencode "cpanel_jsonapi_func=add_line" \
+              --data-urlencode "command=$LINE" --data-urlencode "minute=*/15" --data-urlencode "hour=*" --data-urlencode "day=*" \
+              --data-urlencode "month=*" --data-urlencode "weekday=*" | tee /tmp/addcron.json
+            python3 -c "import json; r=json.load(open('/tmp/addcron.json'))['cpanelresult']; assert r.get('data',[{}])[0].get('status')==1 or r.get('event',{}).get('result')==1, r" && echo "ok cron job added"
+          fi
+
       - name: Upload fonts
         run: |
           curl -sS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" "$HOST/execute/Fileman/mkdir?path=$DOCROOT&name=fonts" >/dev/null || true
