@@ -347,7 +347,18 @@ function send_apns(string $token, string $title, string $body, string $url): boo
   return $code === 410 || $code === 400;
 }
 
-/* scheduled job: noon outlook prompt (Mon-Sat), closing reminder, owner's 3 PM digest. Days run 3 AM to 3 AM, India time. */
+/* scheduled job: the panel read (prompt at noon on its first day, nudge two days later), round closing reminders,
+   owner's 3 PM digest on read and round days. Days run 3 AM to 3 AM, India time. */
+function read_period(string $cid, string $cycle): array {
+  $cfg = get_doc("clients/$cid/config/mill") ?: [];
+  $n = (int)round((float)($cfg['read_every'] ?? 4)); if ($n < 1 || $n > 14) $n = 4;
+  $a = (string)($cfg['read_anchor'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $a)) $a = '2026-11-14';
+  $A = strtotime($a . ' 00:00:00 UTC'); $D = strtotime($cycle . ' 00:00:00 UTC'); $step = $n * 86400;
+  $st = $A + (int)floor(($D - $A) / $step) * $step;
+  return ['start' => gmdate('Y-m-d', $st), 'end' => gmdate('Y-m-d', $st + ($n - 1) * 86400), 'day' => (int)(($D - $st) / 86400), 'n' => $n];
+}
+function read_label(array $p): string { $a = strtotime($p['start'] . ' UTC'); $b = strtotime($p['end'] . ' UTC');
+  return $p['n'] === 1 ? gmdate('j M', $a) : (gmdate('M', $a) === gmdate('M', $b) ? gmdate('j', $a) . '–' . gmdate('j M', $b) : gmdate('j M', $a) . ' – ' . gmdate('j M', $b)); }
 function docs_under(string $parent): array {
   $st = db()->prepare('SELECT path, data FROM docs WHERE parent=? AND deleted=0'); $st->execute([$parent]); $o = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $o[substr($r['path'], strlen($parent) + 1)] = json_decode($r['data'], true) ?: [];
@@ -374,9 +385,12 @@ function run_schedule(bool $dry, ?string $at = null): array {
     $pan = array_values(array_filter(users_where($cid, ['panelist']), fn($u) => (get_doc('users/' . $u)['role'] ?? '') === 'panelist'));
     $open = array_filter($rounds, fn($r) => ($r['status'] ?? '') !== 'decided' && strtotime((string)($r['valid_until'] ?? '')) > $ts);
     $mk = fn(string $k) => $dry ? once($k, true) : ($sw[explode(':', $k)[0]] ? once($k, false) : false);
-    if ($workday && $hm >= 720 && $hm < 840 && !$open && $mk("noon:$cid:$cycle")) {
-      $to = array_values(array_filter($pan, fn($u) => !isset($outl[$cycle . '__' . $u])));
-      $add('noon', $to, "Today's market outlook", "What's your read on today's market, and what should the mills do? One tap, no figures needed.", './#today', $cid);
+    $rp = read_period($cid, $cycle); $rl = read_label($rp);
+    $nudge = $rp['n'] >= 3 && $rp['day'] === 2;
+    if ($hm >= 720 && $hm < 840 && ($rp['day'] === 0 || $nudge) && $mk("noon:$cid:$cycle")) {
+      $to = array_values(array_filter($pan, fn($u) => !isset($outl[$rp['start'] . '__' . $u])));
+      if ($nudge) $add('noon', $to, 'Your market read is still missing', "The owner is waiting on your read for $rl. Two taps, no figures needed.", './#today', $cid);
+      else $add('noon', $to, 'Market read due', "What's your read on the market for $rl, and what should the mills do? Two taps, no figures needed.", './#today', $cid);
     }
     foreach ($open as $rid => $r) {
       $left = strtotime((string)$r['valid_until']) - $ts;
@@ -390,17 +404,17 @@ function run_schedule(bool $dry, ?string $at = null): array {
         $add('reminder', $to, 'Round closes soon', ($r['title'] ?? 'The round') . ' closes at ' . (new DateTimeImmutable('@' . strtotime((string)$r['valid_until'])))->setTimezone($tz)->format('g:i A') . '. Your view is still needed.', './#round=' . $rid, $cid);
       }
     }
-    if ($workday && $hm >= 900 && $hm < 1020 && $mk("digest:$cid:$cycle")) {
-      $todayRounds = array_keys(array_filter($rounds, fn($r) => strtotime((string)($r['created_at'] ?? '')) >= $cycleStart->getTimestamp()));
+    $todayRounds = array_keys(array_filter($rounds, fn($r) => strtotime((string)($r['created_at'] ?? '')) >= $cycleStart->getTimestamp()));
+    if ($pan && $hm >= 900 && $hm < 1020 && ($rp['day'] === 0 || $todayRounds) && $mk("digest:$cid:$cycle")) {
       $n = 0; $st = ['sell' => 0, 'some' => 0, 'hold' => 0];
       foreach ($pan as $u) {
         $s = null;
-        if (isset($outl[$cycle . '__' . $u])) $s = $outl[$cycle . '__' . $u]['stance'] ?? null;
+        if (isset($outl[$rp['start'] . '__' . $u])) $s = $outl[$rp['start'] . '__' . $u]['stance'] ?? null;
         else foreach ($todayRounds as $rid) if (isset($rviews[$rid . '__' . $u])) { $p = (float)($rviews[$rid . '__' . $u]['sell_pct'] ?? 0); $s = $p >= 100 ? 'sell' : ($p <= 0 ? 'hold' : 'some'); }
         if ($s !== null) { $n++; if (isset($st[$s])) $st[$s]++; }
       }
       $mix = implode(', ', array_filter([$st['sell'] ? $st['sell'] . ' sell all' : '', $st['some'] ? $st['some'] . ' sell some' : '', $st['hold'] ? $st['hold'] . ' hold' : '']));
-      $add('digest', users_where($cid, ['owner']), 'Advisor responses today', "$n of " . count($pan) . ' advisors have responded today' . ($mix ? " ($mix)." : '.'), './', $cid);
+      $add('digest', users_where($cid, ['owner']), $todayRounds ? 'Advisor responses today' : "Panel read for $rl", "$n of " . count($pan) . ' advisors have ' . ($todayRounds ? 'responded today' : 'sent their read so far') . ($mix ? " ($mix)." : '.'), './', $cid);
     }
   }
   if (!$dry) put_doc('config/cron', (object)['last_run' => $now->format(DATE_ATOM), 'sent' => array_sum(array_map(fn($p) => $p['on'] ? $p['to'] : 0, $plan))]);
@@ -792,8 +806,54 @@ if (!defined('TARAZU_LIB')) try {
       db()->prepare('INSERT OR REPLACE INTO native_push(token,user_id,platform,created) VALUES(?,?,?,?)')->execute([$tok, $u['id'], $pf, microtime(true)]);
       out(['ok' => true]);
     }
+    case 'sales_push': {
+      /* Nirani's sales software pushes invoices here with its own key. Each row is saved once by its reference;
+         sending the same reference again updates it, and cancelled:true removes it. */
+      if (!defined('SALES_KEY') || SALES_KEY === '') fail('The sales feed is not switched on yet.', 503);
+      $key = (string)($_SERVER['HTTP_X_TARAZU_SALES_KEY'] ?? '');
+      if (!rate_ok('sales:' . client_ip(), 240, 3600)) fail('Too many requests. Try again later.', 429);
+      if ($key === '' || !hash_equals(SALES_KEY, $key)) { audit(null, 'sales_push_denied', ''); fail('Invalid sales key.', 401); }
+      $cid = (string)($in['client'] ?? '');
+      if (!preg_match('#^[a-z0-9\-]{2,40}$#', $cid) || !get_doc("clients/$cid")) fail('Unknown client.', 400);
+      $rows = $in['sales'] ?? null;
+      if (!is_array($rows) || !$rows) fail('Send a non-empty "sales" list.', 400);
+      if (count($rows) > 1000) fail('Send at most 1000 sales per request.', 413);
+      $byCode = [];
+      foreach (docs_under("clients/$cid/mills") as $mid => $m) { $c = strtolower(trim((string)($m['code'] ?? ''))); if ($c !== '') $byCode[$c] = [$mid, $m]; }
+      $saved = 0; $removed = 0; $skipped = []; $touched = [];
+      foreach ($rows as $i => $r) {
+        $ref = trim((string)($r['ref'] ?? ''));
+        if ($ref === '' || strlen($ref) > 80) { $skipped[] = ['row' => $i, 'ref' => $ref, 'reason' => 'missing or too long ref']; continue; }
+        $path = "clients/$cid/ledger/erp_" . substr(hash('sha256', $cid . '|' . $ref), 0, 20);
+        if (!empty($r['cancelled'])) { $old = get_doc($path); if ($old) { del_doc($path); $removed++; $touched[$old['mill_id'] ?? ''] = true; } continue; }
+        $date = (string)($r['date'] ?? ''); $code = strtolower(trim((string)($r['mill_code'] ?? '')));
+        $qty = (float)($r['qty'] ?? 0); $rate = (float)($r['rate'] ?? 0);
+        $d = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        if (!$d || $d->format('Y-m-d') !== $date) { $skipped[] = ['row' => $i, 'ref' => $ref, 'reason' => 'date must be YYYY-MM-DD']; continue; }
+        if (!isset($byCode[$code])) { $skipped[] = ['row' => $i, 'ref' => $ref, 'reason' => 'unknown mill_code']; continue; }
+        if ($qty <= 0 || $qty > 1e6) { $skipped[] = ['row' => $i, 'ref' => $ref, 'reason' => 'qty must be quintals, above 0']; continue; }
+        if ($rate < 1000 || $rate > 20000) { $skipped[] = ['row' => $i, 'ref' => $ref, 'reason' => 'rate must be rupees per quintal (1000 to 20000)']; continue; }
+        [$mid, $m] = $byCode[$code];
+        put_doc($path, ['date' => $date, 'mill_id' => $mid, 'mill_code' => (string)($m['code'] ?? ''), 'mill_name' => (string)($m['name'] ?? ''),
+          'qty' => round($qty, 2), 'rate' => round($rate, 2), 'grade' => substr((string)($r['grade'] ?? 'M/30'), 0, 20), 'buyer' => substr((string)($r['buyer'] ?? ''), 0, 120),
+          'ref' => $ref, 'source' => 'erp', 'received_at' => gmdate('c')]);
+        $saved++; $touched[$mid] = true;
+      }
+      /* keep each mill's sold quantity and average price for the month in step with the ledger */
+      $month = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m');
+      $ledger = docs_under("clients/$cid/ledger");
+      foreach (array_keys(array_filter($touched)) as $mid) {
+        if ($mid === '' || !($m = get_doc("clients/$cid/mills/$mid"))) continue;
+        $q = 0.0; $v = 0.0;
+        foreach ($ledger as $x) if (($x['mill_id'] ?? '') === $mid && substr((string)($x['date'] ?? ''), 0, 7) === $month) { $q += (float)$x['qty']; $v += (float)$x['qty'] * (float)$x['rate']; }
+        $m['sold_qty'] = round($q); $m['sold_avg_price'] = $q ? (int)round($v / $q) : null; $m['sold_synced_at'] = gmdate('c');
+        put_doc("clients/$cid/mills/$mid", $m);
+      }
+      audit(null, 'sales_push', $cid, ['client_id' => $cid, 'saved' => $saved, 'removed' => $removed, 'skipped' => count($skipped)]);
+      out(['ok' => true, 'received' => count($rows), 'saved' => $saved, 'removed' => $removed, 'skipped' => $skipped]);
+    }
     case 'health': out(['ok' => true, 'sqlite' => extension_loaded('pdo_sqlite'), 'openssl' => extension_loaded('openssl'), 'curl' => extension_loaded('curl'), 'data_dir_outside_web' => strpos(DATA_DIR, __DIR__) !== 0,
-      'n8n_key' => defined('N8N_KEY') && N8N_KEY !== '', 'whatsapp_otp' => defined('WA_API_KEY') && WA_API_KEY !== '', 'fcm' => defined('FCM_SERVICE_ACCOUNT') && is_file(FCM_SERVICE_ACCOUNT), 'apns' => defined('APNS_KEY_FILE') && is_file(APNS_KEY_FILE)]);
+      'n8n_key' => defined('N8N_KEY') && N8N_KEY !== '', 'whatsapp_otp' => defined('WA_API_KEY') && WA_API_KEY !== '', 'sales_feed' => defined('SALES_KEY') && SALES_KEY !== '', 'fcm' => defined('FCM_SERVICE_ACCOUNT') && is_file(FCM_SERVICE_ACCOUNT), 'apns' => defined('APNS_KEY_FILE') && is_file(APNS_KEY_FILE)]);
     default: fail('Unknown operation', 404);
   }
 } catch (Throwable $e) {

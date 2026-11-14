@@ -13,6 +13,7 @@ define('VAPID_SUBJECT', 'mailto:test@example.com');
 define('N8N_BASE', 'http://127.0.0.1:8098');
 define('N8N_KEY', 'test-shared-key');
 define('WA_API_KEY', 'test-wa-key');
+define('SALES_KEY', 'test-sales-key');
 define('WA_ENDPOINT', 'http://127.0.0.1:8098/wa');
 define('BACKUP_KEY', '$(openssl rand -hex 32)');
 PHP

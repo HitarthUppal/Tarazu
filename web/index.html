@@ -387,6 +387,37 @@ body.phone .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .ph-count .dots i.on{background:var(--cane)}
 .ph-count .ok{color:var(--cane);font-weight:700}.ph-count .bad{color:var(--danger);font-weight:700}
 .empty button{min-height:40px}
+
+/* tarazu-cadence v1 */
+.pr-list{display:flex;flex-direction:column}
+.pr-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.pr-row p{grid-column:1 / -1;margin:0;color:var(--muted)}
+
+/* tarazu-lean v1 */
+.card.needs{border:2px solid var(--danger)}
+.card.needs .eyebrow{color:var(--danger)}
+.card.needs .row + .row{border-top:1px solid var(--line);padding-top:10px}
+body.phone table.stack thead{display:none}
+body.phone table.stack,body.phone table.stack tbody,body.phone table.stack tfoot{display:block;width:100%}
+body.phone table.stack tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:10px 0;border-top:1px solid var(--line)}
+body.phone table.stack td{display:block;padding:0;border:0;text-align:left;min-width:0}
+body.phone table.stack td:first-child{grid-column:1 / -1;font-weight:700}
+body.phone table.stack td[data-l]::before{content:attr(data-l);display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
+body.phone table.stack td input{width:100%;min-width:0}
+body.phone table.stack tfoot tr{grid-template-columns:repeat(3,minmax(0,1fr))}
+body.phone table.stack tfoot td:first-child{grid-column:auto}
+.mcards{display:flex;flex-direction:column;gap:8px}
+.mcard{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:6px 10px;align-items:center;background:var(--card)}
+.mc-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mc-main > b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-in{text-align:right;font-weight:700}
+.mc-x{grid-column:1 / -1}
+.mc-facts{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted)}
+.mc-facts b{color:var(--ink)}
+.mc-wish{font-weight:700}
+.mc-wish input{margin-top:4px}
+.mcard details summary{color:var(--muted);cursor:pointer}
+.mcard details .grid2{margin-top:8px}
 </style>
 
 <div class="wrap" id="app">
@@ -782,20 +813,20 @@ function renderCore(){
   if(!S.me){ setTabs(null); m.innerHTML = phoneLoginView(); if(S.draft.focusOtp){ S.draft.focusOtp = false; setTimeout(() => { const e = $("#ph-otp"); if(e) e.focus(); }, 0); } return; }
   const r = S.me.role, rt = S.route.name;
   if(r === "manager"){
-    setTabs(V3 ? [["home","Mills"],["rounds","Rounds"],["sales","Sales"]] : [["home","Mills"],["rounds","Rounds"]]);
+    setTabs(V3 ? [["home","Mills"],["rounds","Rounds"],["sales","Sales"],["market","Market"]] : [["home","Mills"],["rounds","Rounds"]]);
     m.innerHTML = (V3 && v3Main(rt)) || (rt === "round" ? roundView() : rt === "rounds" ? roundsList() : managerHome());
   } else if(r === "panelist"){
     const pending = S.rounds.filter(x => isOpen(x) && !S.rviews.find(v => v.round_id===x.id && v.panelist_id===S.me.id)).length;
-    const needO = V2 && !S.rounds.some(isOpen) && !S.outlooks.find(o => o.day === cycleDay() && o.panelist_id === S.me.id) ? 1 : 0;
+    const needO = V2 && panelists().length && !myRead(readPeriod().start) ? 1 : 0;
     const needP = V3 ? S.polls.filter(p => pollOpen(p) && !myVote(p.id)).length : 0;
-    setTabs(V3 ? [["home","Today", pending + needO + needP],["market","Market"],["sales","Sales"]] : [["home", V2 ? "Today" : "Rounds", pending + needO],["market","Market"]]);
+    setTabs(V3 ? [["home","Home", pending + needO + needP],["market","Market"],["sales","Sales"]] : [["home", V2 ? "Today" : "Rounds", pending + needO],["market","Market"]]);
     m.innerHTML = (V3 && v3Main(rt)) || (rt === "round" ? roundView() : rt === "market" ? marketPage() : (V2 ? panelistHomeV2() : panelistHome()));
   } else if(isMaster()){
     setTabs([["master","Master"],["client","Client"]]);
     m.innerHTML = rt === "client" ? clientAdminView() : masterView();
   } else {
     const awaiting = S.rounds.filter(x => x.status !== "decided").length;
-    setTabs(V3 ? [["home","Home"],["rounds","Rounds", awaiting],["sales","Sales"],["admin","Admin"]] : [["home","Home"],["rounds","Rounds", awaiting],["admin","Admin"], ...(isMaster() ? [["master","Master"]] : [])]);
+    setTabs(V3 ? [["home","Home"],["rounds","Rounds", awaiting],["sales","Sales"],["market","Market"],["admin","Admin"]] : [["home","Home"],["rounds","Rounds", awaiting],["admin","Admin"], ...(isMaster() ? [["master","Master"]] : [])]);
     m.innerHTML = (V3 && v3Main(rt)) || rt === "round" ? ((V3 && v3Main(rt)) || roundView()) : rt === "rounds" ? roundsList() : rt === "admin" ? adminView() : (rt === "master" && isMaster()) ? masterView() : ownerHome();
   }
   maybeRefreshMarket();
@@ -925,25 +956,41 @@ function reportsCard(){
       ${r.outlook?`<details><summary>Price outlook</summary><p class="small" style="white-space:pre-wrap">${esc(r.outlook.slice(0,1800))}</p></details>`:""}</li>`).join("")}</ul>`:`<div class="empty">No reports uploaded yet.</div>`}
   </section>`;
 }
-function rail(){ return `<aside class="rail">${V3 && S.me && S.me.role === "manager" ? saleBox() : ""}${spotCard(false)}${newsCard()}${notifCard(5)}${intelCards()}</aside>`; }
-function railBelow(){ return `<h2>Market intelligence</h2><div class="railgrid">${spotCard(false)}${newsCard()}${notifCard(5)}${intelCards()}</div>`; }
-function marketPage(){ return `<h1>Market</h1><div class="list">${spotCard(false)}${newsCard()}${notifCard(8)}${intelCards()}</div>`; }
+/* tarazu-lean v1 */
+function rail(){ return ""; }
+function railBelow(){ return ""; }
+function marketPage(){ return `<div class="list">${spotCard(false)}${newsCard()}${notifCard(8)}${intelCards()}</div>`; }
 
 /* ---------- mills table (owner and manager) ---------- */
 function totals(ms){ const t = {stock:0, quota:0, sold:0, value:0, bq:0, bs:0, wish:0}; ms.forEach(m => { t.stock += num(m.stock_wh); t.quota += num(m.quota); t.sold += num(m.sold_qty); t.value += num(m.sold_qty)*num(m.sold_avg_price); t.bq += balQuota(m); t.bs += balStock(m); t.wish += num(m.wish_to_sell); }); t.avg = t.sold ? t.value/t.sold : 0; return t; }
+function millsPhone(editable){
+  const ms = millsSorted(), t = totals(ms), pct = V2 && S.draft.wishUnit === "pct";
+  if(!editable) return `<div class="tablewrap"><table class="compact"><thead><tr><th>Mill</th><th class="r">Bal. quota</th><th class="r">Sold avg</th></tr></thead>
+    <tbody>${ms.map(m => `<tr><td class="mname">${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r"><b>${q(balQuota(m))}</b></td><td class="r">${num(m.sold_avg_price) ? inr(m.sold_avg_price) : "–"}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Group total</td><td class="r">${q(t.bq)}</td><td class="r">${t.avg ? inr(t.avg) : "–"}</td></tr></tfoot></table></div><p class="small muted">Quintals. Full table on a computer.</p>`;
+  const inp = (m, k, l) => `<label class="mc-f">${l}<input data-mill="${esc(m.id)}" data-k="${k}" inputmode="numeric" value="${has(m[k]) ? esc(m[k]) : ""}"></label>`;
+  return `<div class="row between small muted" style="padding:0 4px"><span>Mill · balance quota</span><span>Wish to sell${pct ? ", %" : ", qtl"}</span></div><div class="mcards">${ms.map(m => `<div class="mcard">
+      <div class="mc-main"><b>${esc(m.unit_no)} · ${esc(m.name)}</b><span class="small muted">Bal. quota <b class="num">${q(balQuota(m))}</b> · sold <span class="num">${q(m.sold_qty)}</span></span></div>
+      ${pct ? `<input class="mc-in" data-millpct="${esc(m.id)}" inputmode="decimal" aria-label="${esc(m.name)}: wish to sell, percent of balance quota" placeholder="0" value="${has(m.wish_to_sell) && balQuota(m) ? pctOf(m.wish_to_sell, balQuota(m)) : ""}">` : `<input class="mc-in" data-mill="${esc(m.id)}" data-k="wish_to_sell" inputmode="numeric" aria-label="${esc(m.name)}: wish to sell, quintals" placeholder="0" value="${num(m.wish_to_sell) ? esc(m.wish_to_sell) : ""}">`}
+      ${num(m.wish_to_sell) > balQuota(m) ? `<span class="small mc-x" style="color:var(--danger)">More than the balance quota</span>` : ""}
+      <details class="mc-x"><summary class="small">Stock and quota</summary><div class="grid2">${inp(m, "stock_wh", "Stock in WH")}${inp(m, "quota", "Quota")}</div></details>
+    </div>`).join("")}</div>
+    <p class="small"><b class="num">${qtl(t.wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills. Sold figures come from the sales feed.</p>`;
+}
 function millsTable(editable){
+  if(document.body.classList.contains("phone")) return millsPhone(editable);
   const ms = millsSorted(), t = totals(ms);
   const inp = (m, k) => `<input data-mill="${esc(m.id)}" data-k="${k}" inputmode="numeric" aria-label="${esc(m.name)} ${k}" value="${has(m[k])?esc(m[k]):""}">`;
   const spotDelta = m => { if(V3) return ""; const s = spotFor(m.state, m.grade); if(!s || !num(m.sold_avg_price)) return ""; const d = num(m.sold_avg_price) - s.mid; return `<span class="sub" title="Against ${esc(s.label)} spot ${inr(s.mid)}">${d>=0?"+":"−"}${q(Math.abs(d))} vs spot</span>`; };
   return `${ms.some(m => m.example)?`<div class="small" style="color:var(--jaggery)">Figures are examples until the mills' real numbers are entered.</div>`:""}<div class="tablewrap"><table class="compact">
     <thead><tr><th>Unit</th><th>Mill name</th><th>Code</th><th class="r">Stock in WH</th><th class="r">Quota</th><th class="r">Sold qty</th><th class="r">Sold avg price</th><th class="r">Bal. quota</th><th class="r">Bal. stock</th>${editable?`<th class="r">${V2 && S.draft.wishUnit === "pct" ? "Wish to sell (% of bal. quota)" : "Wish to sell"}</th>`:""}</tr></thead>
     <tbody>${ms.map(m => `<tr><td class="unit">${esc(m.unit_no)}</td><td class="mname" title="${esc(m.location||"")}">${esc(m.name)}</td><td class="num">${esc(m.code)}</td>
-      ${editable?`<td class="r">${inp(m,"stock_wh")}</td><td class="r">${inp(m,"quota")}</td><td class="r">${inp(m,"sold_qty")}</td><td class="r">${inp(m,"sold_avg_price")}</td>`
+      ${editable?`<td class="r">${inp(m,"stock_wh")}</td><td class="r">${inp(m,"quota")}</td><td class="r">${q(m.sold_qty)}</td><td class="r">${num(m.sold_avg_price)?inr(m.sold_avg_price):"–"}</td>`
         :`<td class="r">${q(m.stock_wh)}</td><td class="r">${q(m.quota)}</td><td class="r">${q(m.sold_qty)}</td><td class="r">${num(m.sold_avg_price)?inr(m.sold_avg_price):"–"}${spotDelta(m)}</td>`}
       <td class="r"><b>${q(balQuota(m))}</b></td><td class="r">${q(balStock(m))}</td>
       ${editable?`<td class="r">${V2 && S.draft.wishUnit === "pct" ? `<input data-millpct="${esc(m.id)}" inputmode="decimal" aria-label="${esc(m.name)} wish to sell, percent of balance quota" value="${has(m.wish_to_sell) && balQuota(m) ? pctOf(m.wish_to_sell, balQuota(m)) : ""}"><span class="sub num">${has(m.wish_to_sell) ? "= " + q(m.wish_to_sell) + " qtl" : ""}</span>` : inp(m,"wish_to_sell")}${num(m.wish_to_sell)>balQuota(m)?`<span class="sub" style="color:var(--danger)">over balance</span>`:""}</td>`:""}</tr>`).join("")}</tbody>
     <tfoot><tr><td colspan="3">Group total</td><td class="r">${q(t.stock)}</td><td class="r">${q(t.quota)}</td><td class="r">${q(t.sold)}</td><td class="r">${t.avg?inr(t.avg):"–"}</td><td class="r">${q(t.bq)}</td><td class="r">${q(t.bs)}</td>${editable?`<td class="r">${q(t.wish)}</td>`:""}</tr></tfoot>
-  </table></div><p class="small muted">Quantities in quintals. Balance quota = quota − sold; balance stock = stock − sold, both calculated.</p>`;
+  </table></div><p class="small muted">Quintals. Balance = quota or stock minus sold. Sold figures come from the sales feed.</p>`;
 }
 
 /* ---------- owner home ---------- */
@@ -953,7 +1000,6 @@ function ownerHome(){
   const t = totals(millsSorted());
   return `<div class="layout"><div class="main">
     ${latestRoundCard()}
-    ${V2 ? moodCard() : ""}
     <div class="row between"><h1>Group position</h1><span class="small muted">${esc(clientName(S.client))} · ${esc(monthLabel(new Date().toISOString().slice(0,7)))}</span></div>
     <div class="stat"><div><div class="n num">${q(t.bq)}</div><div class="l">Balance quota, qtl</div></div><div><div class="n num">${q(t.sold)}</div><div class="l">Sold this month, qtl</div></div>
       <div><div class="n num">${t.avg?inr(t.avg):"–"}</div><div class="l">Average sold price</div></div><div><div class="n num">${refSpot()?inr(refSpot()):"–"}</div><div class="l">S. Karnataka S/30 spot</div></div></div>
@@ -1256,8 +1302,8 @@ function decisionForm(r){
   return `<form id="decision-form" class="card"><h2>Your decision</h2><p class="small muted">Prefilled with the panel median for each mill. The panel is advisory; change anything.</p>
     <div class="row"><label style="flex:1;min-width:120px">Apply % to all<input id="bulk-pct" inputmode="numeric" placeholder="e.g. 50" value="${esc(d.bulkPct)}"></label><label style="flex:1;min-width:120px">at rate (₹/qtl)<input id="bulk-rate" inputmode="numeric" placeholder="${refSpot()?q(refSpot()):""}" value="${esc(d.bulkRate)}"></label><button type="button" data-act="bulk-apply" style="align-self:flex-end">Apply</button><button type="button" class="ghost" data-act="hold-all" style="align-self:flex-end">Hold all</button></div>
     ${V2 ? `<div class="row between"><span class="small muted">Enter "sell now" as</span>${unitSeg("dec-unit", d.decUnit || "qtl", ["Quintals", "% of wish"])}</div>` : ""}
-    <div class="tablewrap"><table><thead><tr><th>Mill</th><th class="r">Wish to sell</th><th class="r">${V2 && d.decUnit === "pct" ? "Sell now (% of wish)" : "Sell now (qtl)"}</th><th class="r">Rate (₹/qtl)</th></tr></thead>
-      <tbody>${ms.map(m => `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r">${q(m.wish_to_sell)}</td><td class="r">${V2 && d.decUnit === "pct" ? `<input data-dec="${esc(m.id)}" data-k="pct" inputmode="decimal" value="${pctOf(d.rows[m.id].qty, m.wish_to_sell)}"><span class="sub num" id="decq-${esc(m.id)}">= ${q(d.rows[m.id].qty)} qtl</span>` : `<input data-dec="${esc(m.id)}" data-k="qty" inputmode="numeric" value="${esc(d.rows[m.id].qty)}">`}</td><td class="r"><input data-dec="${esc(m.id)}" data-k="rate" inputmode="numeric" value="${esc(d.rows[m.id].rate)}"></td></tr>`).join("")}</tbody>
+    <div class="tablewrap"><table class="stack"><thead><tr><th>Mill</th><th class="r">Wish to sell</th><th class="r">${V2 && d.decUnit === "pct" ? "Sell now (% of wish)" : "Sell now (qtl)"}</th><th class="r">Rate (₹/qtl)</th></tr></thead>
+      <tbody>${ms.map(m => `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r" data-l="Wish to sell">${q(m.wish_to_sell)}</td><td class="r" data-l="${V2 && d.decUnit === "pct" ? "Sell now, % of wish" : "Sell now, qtl"}">${V2 && d.decUnit === "pct" ? `<input data-dec="${esc(m.id)}" data-k="pct" inputmode="decimal" value="${pctOf(d.rows[m.id].qty, m.wish_to_sell)}"><span class="sub num" id="decq-${esc(m.id)}">= ${q(d.rows[m.id].qty)} qtl</span>` : `<input data-dec="${esc(m.id)}" data-k="qty" inputmode="numeric" value="${esc(d.rows[m.id].qty)}">`}</td><td class="r" data-l="Rate, ₹/qtl"><input data-dec="${esc(m.id)}" data-k="rate" inputmode="numeric" value="${esc(d.rows[m.id].rate)}"></td></tr>`).join("")}</tbody>
       <tfoot><tr><td>Total</td><td class="r">${q(ms.reduce((s,m)=>s+num(m.wish_to_sell),0))}</td><td class="r" id="dec-tq">${q(tq)}</td><td class="r" id="dec-tv">${tq?inr(tv/tq)+" avg":"–"}</td></tr></tfoot></table></div>
     <label>Note to the manager (optional)<textarea id="dc-note">${esc(d.dnote)}</textarea></label>
     ${S.err.decision?`<div class="notice err">${esc(S.err.decision)}</div>`:""}
@@ -1313,7 +1359,7 @@ function panelistBlock(r){
 }
 function overridesTable(r, d){
   const ms = (r.mills||[]).filter(m => num(m.wish_to_sell));
-  return `<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>Mill</th><th class="r">Wish</th><th class="r">Sell %</th><th class="r">Rate</th></tr></thead><tbody>${ms.map(m => { const o = d.overrides[m.id] || {}; return `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r">${q(m.wish_to_sell)}</td><td class="r"><input data-ov="${esc(m.id)}" data-k="sell_pct" inputmode="numeric" placeholder="${num(d.sell_pct)}" value="${has(o.sell_pct)?esc(o.sell_pct):""}"></td><td class="r"><input data-ov="${esc(m.id)}" data-k="rate" inputmode="numeric" placeholder="${esc(d.target_rate)}" value="${has(o.rate)?esc(o.rate):""}"></td></tr>`; }).join("")}</tbody></table></div><p class="small muted">Leave blank to use your overall view.</p>`;
+  return `<div class="tablewrap" style="margin-top:8px"><table class="stack"><thead><tr><th>Mill</th><th class="r">Wish</th><th class="r">Sell %</th><th class="r">Rate</th></tr></thead><tbody>${ms.map(m => { const o = d.overrides[m.id] || {}; return `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r" data-l="Wish, qtl">${q(m.wish_to_sell)}</td><td class="r" data-l="Sell %"><input data-ov="${esc(m.id)}" data-k="sell_pct" inputmode="numeric" placeholder="${num(d.sell_pct)}" value="${has(o.sell_pct)?esc(o.sell_pct):""}"></td><td class="r" data-l="Rate, ₹/qtl"><input data-ov="${esc(m.id)}" data-k="rate" inputmode="numeric" placeholder="${esc(d.target_rate)}" value="${has(o.rate)?esc(o.rate):""}"></td></tr>`; }).join("")}</tbody></table></div><p class="small muted">Leave blank to use your overall view.</p>`;
 }
 function readback(r, d){
   const ms = (r.mills||[]).filter(m => num(m.wish_to_sell)); let now = 0, val = 0, hold = 0;
@@ -1411,6 +1457,8 @@ function management(){
     ${S.me && S.me.role === "owner" ? securityCard() : ""}
     <h3>Holding cost</h3>
     <form id="settings-form" class="grid2"><label>Interest on working capital (% a year)<input id="st-rate" inputmode="decimal" value="${st.rate}"></label><label>Storage and insurance (₹/qtl a month)<input id="st-store" inputmode="decimal" value="${st.storage}"></label><button type="submit">Save rates</button></form>
+    <h3>Panel read</h3><form id="read-form" class="grid2"><label>Advisors give a read every (days)<input id="rd-every" type="number" min="1" max="14" value="${readEvery()}"></label><label>Counting from<input id="rd-anchor" type="date" value="${readAnchor()}"></label><button type="submit">Save</button></form>
+    <p class="small muted">Current read: ${esc(periodLabel(readPeriod()))}. Advisors get a reminder at noon on its first day, and again two days later if they haven't answered.</p>
     ${st.example?`<p class="small muted">These rates are example values. Set the group's real figures.</p>`:""}
     <h3>Sales history (last 3 years)</h3>
     ${V3 ? csvHelp() : `<p class="small muted">Import a CSV with columns for month (or date), mill code or name, quantity sold (qtl) and average price. Column names are matched loosely.</p>`}
@@ -1500,6 +1548,8 @@ function clientAdminView(){
   </section>
   <section class="card"><h2>Holding cost</h2>
     <form id="settings-form" class="grid2"><label>Interest on working capital (% a year)<input id="st-rate" inputmode="decimal" value="${st.rate}"></label><label>Storage and insurance (₹/qtl a month)<input id="st-store" inputmode="decimal" value="${st.storage}"></label><button type="submit">Save rates</button></form>
+    <h3>Panel read</h3><form id="read-form" class="grid2"><label>Advisors give a read every (days)<input id="rd-every" type="number" min="1" max="14" value="${readEvery()}"></label><label>Counting from<input id="rd-anchor" type="date" value="${readAnchor()}"></label><button type="submit">Save</button></form>
+    <p class="small muted">Current read: ${esc(periodLabel(readPeriod()))}. Advisors get a reminder at noon on its first day, and again two days later if they haven't answered.</p>
     ${st.example?`<p class="small muted">These are example values. Set the client's real figures.</p>`:""}
   </section>
   <section class="card"><h2>Sales history (last 3 years)</h2>
@@ -1561,7 +1611,7 @@ const bandMid = r => { const b = bandOf(r); return b ? Math.round((b[0] + b[1]) 
 const bandTxt = r => { const b = bandOf(r); return !b ? "–" : b[0] === b[1] ? inr(b[0]) : `${inr(b[0])}–${q(b[1])}`; };
 const askLineV3 = r => bandOf(r) ? `<div class="askline"><span class="small muted">Price band</span><span class="big num">${bandTxt(r)}</span><span class="small muted">per qtl, M/30</span></div>` : "";
 /* rounds close at 4 PM; one posted after 4 PM closes two hours after posting */
-function closeTimeV3(){ const now = Date.now(), d = new Date(now + IST_MS); const four = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 16, 0) - IST_MS; return new Date(now < four - 15*60e3 ? four : now + 2*3600e3); }
+function closeTimeV3(){ const t = new Date(Date.now() + 24*3600e3); t.setSeconds(0, 0); t.setMinutes(Math.ceil(t.getMinutes() / 15) * 15); return t; }
 
 /* ---------- timeframe in weeks ---------- */
 const WEEK_BTNS = [[7,"1 week"],[14,"2 weeks"],[21,"3 weeks"],[28,"4 weeks"]];
@@ -1587,27 +1637,6 @@ function pctBoxV3(d){
 }
 
 /* ---------- market mood, newest first, scrolls back ---------- */
-function moodCardV3(){
-  const ps = panelists(), m = moodByDay(), today = cycleDay(), keys = Object.keys(m).filter(k => k <= today).sort();
-  const first = keys[0] || today, span = Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(first + "T00:00:00Z")) / 86400e3) + 1;
-  const days = lastDays(Math.max(7, Math.min(400, span))).reverse(), t = m[today] || {};
-  const tEntries = ps.map(p => t[p.id]).filter(Boolean), lean = leanOf(tEntries), dc = {up:0, flat:0, down:0}; tEntries.forEach(e => { if(e.direction) dc[e.direction]++; });
-  const tSome = avgSomePct(tEntries), tAvg = avgSellPct(tEntries);
-  const wd = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-IN", {weekday:"short", timeZone:"UTC"}), dn = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-IN", {day:"numeric", month:"short", timeZone:"UTC"});
-  const cell = e => e ? `<span class="mcell v3c st-${e.stance}" title="${esc(STANCE_LABEL[e.stance]||"")}${e.stance==="some"&&e.pct?" "+Math.round(e.pct)+"%":""}${e.direction?", "+DIR_LABEL[e.direction]:""} · ${esc(e.src)}">${e.direction?`<i>${DIR_ARROW[e.direction]}</i>`:""}${e.stance === "some" && num(e.pct) > 0 ? `<small>${Math.round(e.pct)}%</small>` : ""}</span>` : `<span class="mcell none">·</span>`;
-  const foot = d => { const es = ps.map(p => (m[d]||{})[p.id]).filter(Boolean); if(!es.length) return `<div class="minibar"></div>`; const c = {sell:0, some:0, hold:0}; es.forEach(e => c[e.stance] != null && c[e.stance]++); const a = avgSellPct(es);
-    return `<div class="minibar">${["sell","some","hold"].map(k => c[k] ? `<i class="st-${k}" style="flex:${c[k]}"></i>` : "").join("")}</div>${a != null ? `<b class="num mood-avg" title="Average share the panel would sell">${a}%</b>` : ""}`; };
-  const notes = ps.map(p => ({p, e:t[p.id]})).filter(x => x.e && (x.e.note || (x.e.voice && x.e.voice.english)));
-  return `<section class="card"><div class="row between"><h2>Market mood</h2><span class="small muted">Newest first · scroll sideways for older days</span></div>
-    <p style="margin:0">Today: <b>${tEntries.length} of ${ps.length}</b> in${lean ? ` · leaning ${lean === "split" ? "<b>split</b>" : stChip(lean)}` : ""}${tAvg != null ? ` · would sell <b>${tAvg}%</b> on average` : ""}${tSome != null ? ` (sell some averaging ${tSome}%)` : ""}${dc.up+dc.flat+dc.down ? ` · prices seen <b>${DIRS.filter(([k]) => dc[k]).map(([k,,a]) => dc[k] + " " + a).join(" ")}</b>` : ""}</p>
-    <div class="tablewrap moodwrap"><table class="mood v3m" style="--n:${days.length}"><thead><tr><th>Advisor</th>${days.map((d,i) => `<th class="c${i===0?" tcol":""}"><span class="dl">${i===0?"Today":wd(d)}</span><span class="ds">${wd(d)}</span><br><span class="dl">${dn(d)}</span><span class="ds">${new Date(d + "T12:00:00Z").getUTCDate()}</span></th>`).join("")}</tr></thead>
-      <tbody>${ps.map(p => `<tr><td>${esc(p.name)}</td>${days.map((d,i) => `<td class="c${i===0?" tcol":""}">${cell((m[d]||{})[p.id])}</td>`).join("")}</tr>`).join("")}</tbody>
-      <tfoot><tr><td>Panel</td>${days.map((d,i) => `<td class="c${i===0?" tcol":""}">${foot(d)}</td>`).join("")}</tr></tfoot></table></div>
-    <div class="small muted">${stChip("sell")} ${stChip("some")} ${stChip("hold")} &nbsp; Yellow cells show how much they would sell. The panel row shows the average share the panel would sell that day (Sell all = 100%, Hold = 0%). Arrow: where they see prices going.</div>
-    ${notes.length ? `<details><summary>Today's notes (${notes.length})</summary><div class="ledger small">${notes.map(x => `<div><span><b>${esc(x.p.name)}</b> ${stChip(x.e.stance)}<br>${esc((x.e.voice && x.e.voice.english) || "")}${x.e.note?`<br>${esc(x.e.note)}`:""}</span></div>`).join("")}</div></details>` : ""}
-  </section>`;
-}
-
 /* ---------- where each advisor would sell, against the band ---------- */
 function priceStripV3(r, vs){
   const b = bandOf(r), mid = bandMid(r);
@@ -1815,40 +1844,6 @@ async function submitVote(){
 
 /* ---------- sales: the ledger, the manager's sale box, the report ---------- */
 const todayIST = () => new Date(Date.now() + IST_MS).toISOString().slice(0,10);
-function saleBox(){
-  const ms = millsSorted(), recent = S.ledger.filter(x => x.source === "manual").sort(byNewest).slice(0, 5);
-  return `<form id="sale-form" class="card" style="border-color:var(--cane);border-width:2px"><h3>Record a sale</h3>
-    <label>Mill<select id="sl-mill" required><option value="">Choose a mill</option>${ms.map(m => `<option value="${esc(m.id)}">${esc(m.code || "–")} · ${esc(m.name)}</option>`).join("")}</select></label>
-    <div class="grid2"><label>Quantity sold, qtl<input id="sl-qty" inputmode="numeric" autocomplete="off" required></label><label>Rate, ₹/qtl M/30<input id="sl-rate" inputmode="numeric" autocomplete="off" required></label></div>
-    <label>Date<input id="sl-date" type="date" value="${todayIST()}" max="${todayIST()}"></label>
-    <button class="primary" type="submit">Save sale</button>
-    <p class="small muted" style="margin:0">Updates that mill's sold quantity, average price, balances and wish to sell.</p>
-    ${recent.length ? `<div class="ledger small">${recent.map(x => `<div><span>${esc(fmtDay(x.date))} · ${esc(x.mill_code || "")} ${esc(x.mill_name || "")}<br><b class="num">${qtl(x.qty)}</b> at ${inr(x.rate)}</span>${x.created_at && cycleDay(x.created_at) === cycleDay() ? `<button type="button" class="ghost sm" data-act="sale-del" data-id="${esc(x.id)}">Delete</button>` : ""}</div>`).join("")}</div>` : ""}</form>`;
-}
-async function submitSale(){
-  const mid = $("#sl-mill").value, qn = Math.round(pnum($("#sl-qty").value)), rate = Math.round(pnum($("#sl-rate").value)), date = $("#sl-date").value || todayIST();
-  const m = S.mills.find(x => x.id === mid);
-  if(!m){ toast("Choose the mill"); return; } if(qn <= 0){ toast("Enter the quantity sold"); return; } if(rate <= 0){ toast("Enter the rate"); return; }
-  if(rate < 1000 || rate > 20000){ toast("Check the rate: enter ₹ per quintal, e.g. 5340"); return; }
-  if(num(m.stock_wh) && qn > balStock(m)){ toast(`That is more than ${m.name}'s balance stock (${qtl(balStock(m))}). Check the quantity, or update the stock first.`); return; }
-  const id = date + "_" + mid + "_" + Date.now().toString(36);
-  const sold = num(m.sold_qty), avg = num(m.sold_avg_price), ns = sold + qn;
-  try{
-    await saveC("ledger/" + id, {date, mill_id:mid, mill_code:m.code || "", mill_name:m.name || "", qty:qn, rate, grade:"M/30", source:"manual", by:S.me.id, created_at:new Date().toISOString()});
-    await saveC("mills/" + mid, {sold_qty:ns, sold_avg_price:Math.round((avg * sold + rate * qn) / ns), ...(has(m.wish_to_sell) ? {wish_to_sell:Math.max(0, num(m.wish_to_sell) - qn)} : {})}, true);
-    toast(`Saved: ${qtl(qn)} from ${m.name} at ${inr(rate)}`); render();
-  }catch(err){ toast(err.message || "Could not save the sale"); }
-}
-async function deleteSale(id){
-  const x = S.ledger.find(l => l.id === id); if(!x) return; const m = S.mills.find(y => y.id === x.mill_id);
-  try{
-    await delC("ledger/" + id);
-    if(m){ const sold = num(m.sold_qty), avg = num(m.sold_avg_price), ns = Math.max(0, sold - num(x.qty));
-      await saveC("mills/" + m.id, {sold_qty:ns, sold_avg_price:ns ? Math.round((avg * sold - num(x.rate) * num(x.qty)) / ns) : 0, ...(has(m.wish_to_sell) ? {wish_to_sell:num(m.wish_to_sell) + num(x.qty)} : {})}, true); }
-    toast("Sale deleted"); render();
-  }catch(err){ toast(err.message || "Could not delete"); }
-}
-/* every sale record, plus imported monthly totals for months that have no daily records */
 function salesRows(){
   const rows = S.ledger.filter(x => x.date && num(x.qty) > 0).map(x => ({date:String(x.date).slice(0,10), mill:x.mill_id || "", code:String(x.mill_code || ""), name:x.mill_name || "", qty:num(x.qty), rate:num(x.rate)}));
   const months = new Set(rows.map(r => r.date.slice(0,7)));
@@ -1906,7 +1901,6 @@ function salesView(){
   const days = Object.values(byDay).sort((a,b) => b.date.localeCompare(a.date)), shownDays = d.sallDays ? days : days.slice(0, 30);
   const unitWord = {day:"day", week:"week", month:"month"}[unit];
   return `<div class="row between"><h1>Sales report</h1><span class="small muted">${esc(clientName(S.client))} · M/30, ₹/qtl</span></div>
-  ${countLine(rows.length, "sale", rows.length ? "this period" : "")}
   <section class="card"><div class="row filt">
       <label>Period<select id="s-period">${SPERIODS.map(([k,l]) => `<option value="${k}" ${f.P === k ? "selected" : ""}>${({"1m":"Last month","3m":"Last 3 months","6m":"Last 6 months","1y":"Last 12 months","3y":"Last 3 years","all":"All time","custom":"Custom dates"})[k] || l}</option>`).join("")}</select></label>
     ${f.P === "custom" ? `<label>From<input id="s-from" type="date" value="${esc(d.sfrom || "")}"></label><label>To<input id="s-to" type="date" value="${esc(d.sto || todayIST())}"></label>` : ""}
@@ -1994,27 +1988,24 @@ function managerHomeV3(){
   const ms = millsSorted(), wish = ms.reduce((s,m) => s + num(m.wish_to_sell), 0), rd = S.draft.rd || {}, last = S.rounds[0];
   const local = toLocalInput(closeTimeV3());
   return `<div class="layout"><div class="main">
-    ${kpiStrip()}
     ${last && last.decision ? decisionCardMgr(last) : ""}
-    <section class="card" id="new-round-card"><div class="row between"><h2>Post a new advisory round</h2><span class="chip">2 steps</span></div>
-      <ol class="small" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px"><li><b>Quantities:</b> check each mill's <b>wish to sell</b> below. Sales you record update the table on their own.</li><li><b>Price band and send:</b> set the band you want, then send. Every advisor is notified.</li></ol>
-      <div class="row"><button class="primary" data-act="to-round-form">${wish ? `Go to step 2 · ${qtl(wish)} to sell` : "Go to step 2"}</button></div></section>
-    ${latestRoundCard()}
-    ${pollsCardMgmt()}
-    ${commentsFeed()}
-    <div class="row between"><h1>Step 1 · Mills</h1><span class="row small" style="gap:8px"><span class="muted">Wish to sell in</span>${unitSeg("wish-unit", S.draft.wishUnit || "qtl", ["Quintals", "% of balance"])}</span></div>
+    ${last && isOpen(last) ? latestRoundCard() : ""}
+    <div class="row between" id="new-round-card"><h2>New round · Step 1: how much to sell</h2><span class="row small" style="gap:8px"><span class="muted">Wish to sell in</span>${unitSeg("wish-unit", S.draft.wishUnit || "qtl", ["Quintals", "% of balance"])}</span></div>
     <section class="card">${millsTable(true)}</section>
     <form id="round-form" class="card" style="border-color:var(--cane);border-width:2px"><h2>Step 2 · Price band and send</h2>
       <p class="small muted">The band is the headline of the round. All prices are M/30.</p>
       <div class="grid2"><label><b>Price band from (₹/qtl)</b><input id="rd-bmin" class="ask" inputmode="numeric" required autocomplete="off" placeholder="${refSpot() ? q(Math.round(refSpot() / 10) * 10 - 30) : "e.g. 5200"}" value="${esc(rd.bmin || "")}"></label>
         <label><b>to (₹/qtl)</b><input id="rd-bmax" class="ask" inputmode="numeric" required autocomplete="off" placeholder="${refSpot() ? q(Math.round(refSpot() / 10) * 10 + 30) : "e.g. 5260"}" value="${esc(rd.bmax || "")}"></label></div>
       <div class="grid2"><label>Round closes<input id="rd-valid" type="datetime-local" required value="${esc(rd.valid || local)}"></label>
-        <span class="small muted" style="align-self:flex-end">Rounds close at 4 PM. One sent after 4 PM closes two hours later.</span></div>
+        <span class="small muted" style="align-self:flex-end">Open for 24 hours unless you change it.</span></div>
       <fieldset class="flags-pick"><legend>Anything urgent the panel must know?</legend><span class="small muted">Only ticked items show at the top of the round, in red.</span>${FLAGS.map(([k,l,ds]) => `<label class="chk"><input type="checkbox" data-flag="${k}" ${rd.flags && rd.flags[k] ? "checked" : ""}><span><b>${l}</b><small>${ds}</small></span></label>`).join("")}</fieldset>
       <label>Note for the panel (optional)<textarea id="rd-note" placeholder="e.g. cane payments due on the 5th; buyers active in Bengaluru">${esc(rd.note || "")}</textarea></label>
       <div class="row between"><span class="small"><b class="num">${qtl(wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills</span><button class="primary" type="submit" ${wish ? "" : "disabled"}>Send to the panel</button></div>
       ${wish ? "" : `<p class="small muted">Enter a wish-to-sell quantity for at least one mill in step 1 to send the round.</p>`}
     </form>
+    ${kpiStrip()}
+    ${pollsCardMgmt()}
+    ${commentsFeed()}
   </div>${rail()}</div>`;
 }
 async function submitRoundV3(){
@@ -2034,8 +2025,8 @@ async function submitRoundV3(){
 }
 
 /* tarazu-ebs v1 */
-function monthStats(mk){
-  const rows = salesRows().filter(r => r.date.slice(0,7) === mk);
+function monthStats(mk, upto){
+  const rows = salesRows().filter(r => r.date.slice(0,7) === mk && (!upto || num(r.date.slice(8,10)) <= upto));
   const qty = rows.reduce((a,r) => a + r.qty, 0), val = rows.reduce((a,r) => a + r.qty * r.rate, 0);
   return {qty, avg: qty ? val / qty : 0, n: rows.length};
 }
@@ -2048,8 +2039,8 @@ function deltaChip(now, before, label){
 }
 function kpiStrip(){
   const mk = new Date(Date.now() + IST_MS).toISOString().slice(0,7), pk = prevMonth(mk);
-  const cur = monthStats(mk), prev = monthStats(pk), t = totals(millsSorted());
-  const pl = new Date(pk + "-15T00:00:00Z").toLocaleDateString("en-IN", {month:"short", timeZone:"UTC"});
+  const dom = num(new Date(Date.now() + IST_MS).toISOString().slice(8,10)), cur = monthStats(mk), prev = monthStats(pk, dom), t = totals(millsSorted());
+  const pl = "1–" + dom + " " + new Date(pk + "-15T00:00:00Z").toLocaleDateString("en-IN", {month:"short", timeZone:"UTC"});
   const spot = refSpot();
   return `<section class="kpis" aria-label="This month at a glance">
     <div class="kpis-h"><span>${esc(monthLabel(mk))}</span><span class="muted">${esc(clientName(S.client))}</span></div>
@@ -2062,28 +2053,28 @@ function kpiStrip(){
 }
 function countLine(n, word, extra){ return `<p class="count">${n} ${word}${n === 1 ? "" : "s"}${extra ? " · " + extra : ""}</p>`; }
 
+function decisionNeededCard(){
+  const due = S.rounds.filter(r => r.status !== "decided" && !isOpen(r)); if(!due.length) return "";
+  return `<section class="card needs"><div class="eyebrow">Decision needed</div>${due.map(r => `<div class="row between" style="flex-wrap:nowrap"><div><b>${esc(r.title || "Advisory round")}</b><div class="small muted">${viewsFor(r.id).length} of ${panelists().length} advisor views · ${qtl((r.mills || []).reduce((a, m) => a + num(m.wish_to_sell), 0))} to sell</div></div><button class="primary" data-act="open" data-id="${esc(r.id)}">Decide</button></div>`).join("")}</section>`;
+}
 function ownerHomeV3(){
-  const open = S.rounds.filter(r => r.status !== "decided"), t = totals(millsSorted());
-  const mk = new Date(Date.now() + IST_MS).toISOString().slice(0,7), month = salesRows().filter(r => r.date.slice(0,7) === mk);
-  const mq = month.reduce((s,r) => s + r.qty, 0), mv = month.reduce((s,r) => s + r.qty * r.rate, 0);
+  const due = new Set(S.rounds.filter(r => r.status !== "decided" && !isOpen(r)).map(r => r.id)), last = S.rounds[0];
   return `<div class="layout"><div class="main">
+    ${decisionNeededCard()}
     ${kpiStrip()}
-    ${latestRoundCard()}
+    ${last && !due.has(last.id) ? latestRoundCard() : ""}
+    ${panelReadCard()}
     ${pollsCardMgmt()}
     ${commentsFeed()}
-    ${moodCardV3()}
     <section class="card"><div class="row between"><h2>Mill-wise position</h2><span class="small muted">${millsSorted().length} units</span></div>${millsTable(false)}</section>
-    <section class="card"><div class="row between"><h2>Advisory rounds awaiting you${open.length ? ` <span class="chip">${open.length}</span>` : ""}</h2><button class="ghost" data-act="go" data-route="rounds">All rounds</button></div>
-      ${open.length ? `<div class="rgrid">${open.map(roundItem).join("")}</div>` : `<div class="empty">Nothing waiting for you. When the mill manager posts a round, it appears here and you get a notification.</div>`}</section>
-    <section class="card"><div class="row between"><h2>Sales this month</h2><button class="ghost" data-act="go" data-route="sales">Sales report</button></div>
-      <p style="margin:0">${mq ? `<b>${qtl(mq)}</b> recorded at <b>${inr(mv / mq)}</b> average (weighted).` : "No sales recorded this month yet."}</p></section>
-  </div>${rail()}</div>`;
+  </div></div>`;
 }
 function v3AdvisorTop(){ return advisorPollCards(); }
 
 /* ---------- routing and events for V3 ---------- */
 function v3Main(rt){
   if(rt === "sales") return salesView();
+  if(rt === "market") return marketPage();
   if(rt === "comment" && S.me.role === "panelist") return commentCompose();
   if(rt === "poll") return pollView();
   if(rt === "poll-new" && S.me.role !== "panelist") return pollCompose();
@@ -2155,7 +2146,6 @@ async function v3Click(a, b, d){
   if(a === "pchoice"){ d.choice = b.dataset.k; render(); return true; }
   if(a === "popt-add"){ d.opts.push(""); render(); return true; }
   if(a === "popt-del"){ d.opts.splice(num(b.dataset.k), 1); render(); return true; }
-  if(a === "sale-del"){ await deleteSale(b.dataset.id); return true; }
   if(a === "sp"){ d.sp = b.dataset.k; render(); return true; }
   if(a === "schart"){ d.schart = b.dataset.k; render(); return true; }
   if(a === "sall-days"){ d.sallDays = !d.sallDays; render(); return true; }
@@ -2190,7 +2180,6 @@ async function v3Submit(f){
   if(f.id === "comment-form"){ await submitComment(); return true; }
   if(f.id === "poll-form"){ await submitPoll(); return true; }
   if(f.id === "pvote-form"){ await submitVote(); return true; }
-  if(f.id === "sale-form"){ await submitSale(); return true; }
   return false;
 }
 
@@ -2266,6 +2255,37 @@ function priceStrip(r, vs){
 }
 
 /* ---------- V2: market mood (owner home) ---------- */
+
+/* tarazu-cadence v1: the panel read comes every N days */
+const READ_ANCHOR_DEFAULT = "2026-11-14";
+function readEvery(){ const n = Math.round(num((S.settings || {}).read_every)); return n >= 1 && n <= 14 ? n : 4; }
+function readAnchor(){ const a = (S.settings || {}).read_anchor; return /^\d{4}-\d{2}-\d{2}$/.test(a || "") ? a : READ_ANCHOR_DEFAULT; }
+function readPeriod(t){
+  const n = readEvery(), A = Date.parse(readAnchor() + "T00:00:00Z"), D = Date.parse(cycleDay(t) + "T00:00:00Z"), step = n * 864e5;
+  const st = A + Math.floor((D - A) / step) * step, f = x => new Date(x).toISOString().slice(0,10);
+  return {start:f(st), end:f(st + (n - 1) * 864e5), next:f(st + step), prev:f(st - step), n};
+}
+function shortDay(d){ return new Date(d + "T12:00:00Z").toLocaleDateString("en-IN", {day:"numeric", month:"short", timeZone:"UTC"}); }
+function periodLabel(p){ if(p.n === 1) return shortDay(p.start); const a = new Date(p.start + "T12:00:00Z"), b = new Date(p.end + "T12:00:00Z");
+  return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()}–${shortDay(p.end)}` : `${shortDay(p.start)} – ${shortDay(p.end)}`; }
+function readsFor(start){ return S.outlooks.filter(o => o.day === start); }
+function myRead(start){ return S.outlooks.find(o => o.day === start && o.panelist_id === S.me.id); }
+
+/* owner and manager: the latest read from each advisor */
+function panelReadCard(){
+  const p = readPeriod(), ps = panelists(); if(!ps.length) return "";
+  const cur = readsFor(p.start), prev = readsFor(p.prev);
+  const use = cur.length ? cur : prev, shown = cur.length ? p : {...p, start:p.prev, end:new Date(Date.parse(p.start + "T00:00:00Z") - 864e5).toISOString().slice(0,10)};
+  const lean = leanOf(use.map(o => ({stance:o.stance}))), pLean = cur.length ? leanOf(prev.map(o => ({stance:o.stance}))) : null;
+  const avg = use.length ? Math.round(use.reduce((a, o) => a + (has(o.sell_pct) ? num(o.sell_pct) : o.stance === "sell" ? 100 : o.stance === "hold" ? 0 : 50), 0) / use.length) : null;
+  const rows = ps.map(u => { const o = use.find(x => x.panelist_id === u.id); const txt = o && ((o.voice && o.voice.english) || o.note);
+    return `<div class="pr-row"><b>${esc(u.name)}</b>${o ? `<span class="row" style="gap:6px">${stChip(o.stance)}${o.stance === "some" && has(o.sell_pct) ? `<span class="small">${Math.round(num(o.sell_pct))}%</span>` : ""}${o.direction ? `<span class="small">${DIR_ARROW[o.direction]} ${DIR_LABEL[o.direction]}</span>` : ""}</span>${txt ? `<p class="small">${esc(txt)}</p>` : ""}` : `<span class="small muted">No read yet</span>`}</div>`; }).join("");
+  return `<section class="card"><div class="row between"><h2>Latest panel read</h2><span class="small muted">${esc(periodLabel(shown))}</span></div>
+    ${use.length ? `<p style="margin:0"><b>${use.length} of ${ps.length}</b> in${lean ? ` · leaning ${lean === "split" ? "<b>split</b>" : stChip(lean)}` : ""}${avg != null ? ` · would sell <b>${avg}%</b> on average` : ""}${pLean && pLean !== lean ? ` <span class="small muted">(last read: ${pLean === "split" ? "split" : STANCE_LABEL[pLean]})</span>` : ""}</p>` : `<p class="small muted" style="margin:0">No reads yet for ${esc(periodLabel(p))}. Advisors are asked on ${esc(shortDay(p.start))}.</p>`}
+    ${use.length ? `<div class="pr-list">${rows}</div>` : ""}
+    ${!cur.length && prev.length ? `<p class="small muted" style="margin:0">Showing the previous read. The new one is due from ${esc(shortDay(p.start))}.</p>` : `<p class="small muted" style="margin:0">Next read due ${esc(shortDay(p.next))}.</p>`}</section>`;
+}
+
 function moodByDay(){
   const m = {};
   S.outlooks.forEach(o => { if(!o.day) return; (m[o.day] = m[o.day] || {})[o.panelist_id] = {stance:o.stance, pct:has(o.sell_pct) ? num(o.sell_pct) : null, direction:o.direction||"", note:o.note, voice:o.voice, src:"Daily outlook"}; });
@@ -2274,61 +2294,43 @@ function moodByDay(){
   return m;
 }
 function leanOf(entries){ const c = {sell:0, some:0, hold:0}; entries.forEach(e => { if(c[e.stance] != null) c[e.stance]++; }); const top = Object.entries(c).sort((a,b) => b[1]-a[1]); return !entries.length ? null : top[0][1] === top[1][1] ? "split" : top[0][0]; }
-function moodCard(){
-  if(V3) return moodCardV3();
-  const ps = panelists(), days = lastDays(7), m = moodByDay(), today = days[days.length-1], t = m[today] || {};
-  const tEntries = ps.map(p => t[p.id]).filter(Boolean), lean = leanOf(tEntries), dc = {up:0, flat:0, down:0}; tEntries.forEach(e => { if(e.direction) dc[e.direction]++; });
-  const wd = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-IN", {weekday:"short", timeZone:"UTC"}), dn = d => Number(d.slice(8));
-  const cell = e => e ? `<span class="mcell st-${e.stance}" title="${esc(STANCE_LABEL[e.stance]||"")}${e.direction?", "+DIR_LABEL[e.direction]:""} · ${esc(e.src)}">${e.direction?DIR_ARROW[e.direction]:""}</span>` : `<span class="mcell none">·</span>`;
-  const mini = d => { const es = ps.map(p => (m[d]||{})[p.id]).filter(Boolean); if(!es.length) return `<div class="minibar"></div>`; const c = {sell:0, some:0, hold:0}; es.forEach(e => c[e.stance] != null && c[e.stance]++); return `<div class="minibar">${["sell","some","hold"].map(k => c[k] ? `<i class="st-${k}" style="flex:${c[k]}"></i>` : "").join("")}</div>`; };
-  const notes = ps.map(p => ({p, e:t[p.id]})).filter(x => x.e && (x.e.note || (x.e.voice && x.e.voice.english)));
-  return `<section class="card"><div class="row between"><h2>Market mood</h2><span class="small muted">The panel's daily read, last 7 days</span></div>
-    <p style="margin:0">Today: <b>${tEntries.length} of ${ps.length}</b> in${lean ? ` · leaning ${lean === "split" ? "<b>split</b>" : stChip(lean)}` : ""}${dc.up+dc.flat+dc.down ? ` · prices seen <b>${DIRS.filter(([k]) => dc[k]).map(([k,,a]) => dc[k] + " " + a).join(" ")}</b>` : ""}</p>
-    <div class="tablewrap"><table class="mood"><thead><tr><th>Advisor</th>${days.map(d => `<th class="c">${wd(d)}<br>${dn(d)}</th>`).join("")}</tr></thead>
-      <tbody>${ps.map(p => `<tr><td>${esc(p.name)}</td>${days.map(d => `<td class="c">${cell((m[d]||{})[p.id])}</td>`).join("")}</tr>`).join("")}</tbody>
-      <tfoot><tr><td>Panel</td>${days.map(d => `<td class="c">${mini(d)}</td>`).join("")}</tr></tfoot></table></div>
-    <div class="small muted">${stChip("sell")} ${stChip("some")} ${stChip("hold")} &nbsp; Arrow: where they see prices going over 2 weeks. Round answers count for the day they were given.</div>
-    ${notes.length ? `<details><summary>Today's notes (${notes.length})</summary><div class="ledger small">${notes.map(x => `<div><span><b>${esc(x.p.name)}</b> ${stChip(x.e.stance)}<br>${esc((x.e.voice && x.e.voice.english) || "")}${x.e.note?`<br>${esc(x.e.note)}`:""}</span></div>`).join("")}</div></details>` : ""}
-  </section>`;
-}
-
 /* ---------- V2: advisor Today screen and quick forms ---------- */
 function panelistHomeV2(){
   const open = S.rounds.filter(isOpen), mineV = id => S.rviews.find(v => v.round_id===id && v.panelist_id===S.me.id);
-  const needs = open.filter(r => !mineV(r.id)), day = cycleDay(), mineO = S.outlooks.find(o => o.day === day && o.panelist_id === S.me.id);
-  let top;
+  const needs = open.filter(r => !mineV(r.id)), per = readPeriod(), day = per.start, mineO = myRead(day);
+  let top = "";
   if(needs.length) top = needs.map(r => `<section class="card today"><div class="eyebrow">Needs your view</div><h2>The mill manager has posted a round</h2>${flagBanner(r)}${r.note?`<div class="mnote"><p>${esc(r.note)}</p></div>`:""}${askLine(r)}${roundSummaryLine(r)}<button class="primary" data-act="open" data-id="${esc(r.id)}">Give your view</button></section>`).join("");
   else if(open.length) top = `<section class="card done"><h2>You're done for now</h2><p class="small" style="margin:0">You've answered the open round. Thank you. You can still add to your view until it closes.</p><button data-act="open" data-id="${esc(open[0].id)}">Open the round</button></section>`;
-  else top = outlookBlock(day, mineO);
+  const readBlock = outlookBlock(day, mineO);
   const past = S.rounds.filter(r => !needs.includes(r)).slice(0,6);
-  const myO = S.outlooks.filter(o => o.panelist_id === S.me.id && o.day !== day).sort((a,b) => String(b.day).localeCompare(String(a.day))).slice(0,5);
-  return `<div class="layout"><div class="main"><h1>Today</h1>${V3 ? v3AdvisorTop() : ""}${top}${V3 ? advisorCommentCard() : ""}
-    ${myO.length ? `<h2>Your recent outlooks</h2><div class="ledger">${myO.map(o => `<div><span>${esc(fmtDay(o.day))}</span><span class="v">${stChip(o.stance)} ${o.direction?DIR_ARROW[o.direction]:""}</span></div>`).join("")}</div>` : ""}
+  const readFirst = !mineO && !needs.length;
+  return `<div class="layout"><div class="main">${V3 ? v3AdvisorTop() : ""}${readFirst ? readBlock + top : top + readBlock}${V3 ? advisorCommentCard() : ""}
     ${past.length ? `<h2>Rounds</h2><div class="rgrid">${past.map(roundItem).join("")}</div>` : ""}
   </div>${document.body.classList.contains("desk")?rail():""}</div>`;
 }
 function outlookBlock(day, mine){
   if(S.draft.forOutlook !== day) S.draft = {forOutlook:day, stance:(mine&&mine.stance)||"", direction:(mine&&mine.direction)||"", move_band:(mine&&Array.isArray(mine.move_range)&&mine.move_range[0]!==mine.move_range[1])?bandKey(mine.move_range):"", move_exact:(mine&&Array.isArray(mine.move_range)&&mine.move_range[0]===mine.move_range[1])?mine.move_range[0]:"", move_days:(mine&&mine.move_days)||7, note:(mine&&mine.note)||"", voice:(mine&&mine.voice)||null};
   const d = S.draft;
-  if(mine && !d.editOutlook) return `<section class="card done"><div class="eyebrow">Today's outlook · sent</div><h2>Thanks, the owner has your read</h2><div class="row">${stChip(mine.stance)}${mine.direction?`<span>${DIR_ARROW[mine.direction]} ${DIR_LABEL[mine.direction]}${esc(moveTxt(mine))}</span>`:""}</div>${mine.voice&&mine.voice.english?`<div class="transcript">${esc(mine.voice.english)}</div>`:""}${mine.note?`<p class="small">${esc(mine.note)}</p>`:""}<button data-act="edit-outlook">Change it</button></section>`;
-  return `<form id="outlook-form" class="card today"><div class="eyebrow">Today's outlook · ${esc(fmtDay(day))}</div>
-    <h2>What's your read on the market today, and what should the mills do?</h2>
+  const per = readPeriod();
+  if(mine && !d.editOutlook) return `<section class="card done"><div class="eyebrow">Your read for ${esc(periodLabel(per))} · sent</div><h2>Thanks, the owner has your read</h2><p class="small muted" style="margin:0">Next read due ${esc(shortDay(per.next))}. You can change this one until then.</p><div class="row">${stChip(mine.stance)}${mine.direction?`<span>${DIR_ARROW[mine.direction]} ${DIR_LABEL[mine.direction]}${esc(moveTxt(mine))}</span>`:""}</div>${mine.voice&&mine.voice.english?`<div class="transcript">${esc(mine.voice.english)}</div>`:""}${mine.note?`<p class="small">${esc(mine.note)}</p>`:""}<button data-act="edit-outlook">Change it</button></section>`;
+  return `<form id="outlook-form" class="card today"><div class="eyebrow">Your read for ${esc(periodLabel(per))}</div>
+    <h2>What's your read on the market for the next ${per.n === 1 ? "day" : per.n + " days"}, and what should the mills do?</h2>
     <p class="small muted" style="margin:0">No figures needed. Two taps and an optional voice note.</p>
     <div><div class="eyebrow">The mills should</div>${stanceSeg(d.stance)}${V3 && d.stance === "some" ? pctBoxV3(d) : ""}</div>
     <div><div class="eyebrow">Where are prices heading?</div>${dirSeg(d.direction)}${moveBlock(d)}</div>
     ${voiceBlock(d)}
     <label>Or type a line (optional)<textarea id="o-note" placeholder="e.g. buyers quiet this week, festival demand from mid-month">${esc(d.note)}</textarea></label>
     ${S.err.view?`<div class="notice err">${esc(S.err.view)}</div>`:""}
-    <button class="primary" type="submit">${mine?"Update my outlook":"Send my outlook"}</button>
+    <button class="primary" type="submit">${mine?"Update my read":"Send my read"}</button>
     <p class="small muted">Only the owner sees this.</p></form>`;
 }
 async function submitOutlook(){
-  const d = S.draft, day = d.forOutlook || cycleDay(); S.err.view = "";
+  const d = S.draft, day = d.forOutlook || readPeriod().start; S.err.view = "";
   if(!d.stance){ S.err.view = "Choose Sell now, Sell some or Hold."; render(); return; }
   const mine = S.outlooks.find(o => o.day === day && o.panelist_id === S.me.id), now = new Date().toISOString();
   const mf = moveFields(d);
   const data = {day, panelist_id:S.me.id, stance:d.stance, ...(V3 ? {sell_pct:d.stance === "some" ? (num(d.sell_pct) || 50) : d.stance === "sell" ? 100 : 0} : {}), direction:d.direction||"", move_range:mf.move_range, move_days:mf.move_days, ...(mf.move_range ? {expected_move:mf.expected_move} : {}), note:String(d.note||"").trim(), voice:d.voice || null, created_at:(mine && mine.created_at) || now, updated_at:now, edits:(mine ? num(mine.edits) + 1 : 0)};
-  try{ await saveC("outlooks/" + day + "__" + S.me.id, data); S.draft = {}; toast(mine ? "Outlook updated" : "Outlook sent to the owner"); render(); }
+  try{ await saveC("outlooks/" + day + "__" + S.me.id, data); S.draft = {}; toast(mine ? "Read updated" : "Read sent to the owner"); render(); }
   catch(err){ S.err.view = err.message || "Could not send."; render(); }
 }
 function panelistBlockV2(r){
@@ -2585,6 +2587,9 @@ document.addEventListener("submit", async e => {
   if(f.id === "decision-form"){ if(!S.draft.confirmDecision){ S.draft.confirmDecision = true; render(); return; } S.draft.confirmDecision = false; return submitDecision(); }
   if(f.id === "user-form"){ const name = $("#nu-name").value.trim(); if(!name) return; const id = "u" + Date.now().toString(36);
     await save("users/"+id, {name, role:$("#nu-role").value, pin:"0000", active:true, client_id:S.client, created_at:new Date().toISOString()}).catch(err => toast(err.message||"Could not save")); toast("Added " + name); return; }
+  if(f.id === "read-form"){ const n = Math.round(pnum($("#rd-every").value)), a = $("#rd-anchor").value;
+    if(!(n >= 1 && n <= 14)){ toast("Choose between 1 and 14 days"); return; } if(!/^\d{4}-\d{2}-\d{2}$/.test(a)){ toast("Choose a start date"); return; }
+    await saveC("config/mill", {...S.settings, read_every:n, read_anchor:a}).then(() => toast(`Panel read every ${n} day${n > 1 ? "s" : ""}`)).catch(err => toast(err.message || "Could not save")); return; }
   if(f.id === "settings-form"){ const ir = pnum($("#st-rate").value), sc = pnum($("#st-store").value); if(ir < 0 || ir > 30){ toast("Interest rate should be between 0 and 30% a year"); return; } if(sc < 0 || sc > 200){ toast("Storage should be between ₹0 and ₹200 per quintal a month"); return; }
     await saveC("config/mill", {...S.settings, interest_rate_pct:num($("#st-rate").value), storage_per_qtl_month:num($("#st-store").value), example:false}).catch(err => toast(err.message||"Could not save")); toast("Rates saved"); return; }
   if(f.id === "flag-form"){ await save("config/news", {news_flag_field:$("#fl-field").value.trim(), news_flag_value:$("#fl-value").value.trim(), updated_at:new Date().toISOString()}).catch(err => toast(err.message||"Could not save")); toast("Filter saved. Refreshing news…"); refreshMarket(true); return; }

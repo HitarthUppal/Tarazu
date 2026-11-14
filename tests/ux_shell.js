@@ -61,7 +61,8 @@ const ROLES = [['m1', 'master'], ['o1', 'owner'], ['mg1', 'manager'], ['p1', 'pa
         ok(`${tag}: no sideways scrolling`, overflow <= 1, overflow);
       }
       if (role === 'owner' || role === 'manager') {
-        ok(`${tag}: headline figures at the top`, await page.evaluate(() => { const k = document.querySelector('#main .kpis'), c = document.querySelector('#main .card'); return !!k && !!c && !!(k.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING); }));
+        if (role === 'owner') ok(`${tag}: headline figures near the top`, await page.evaluate(() => { const k = document.querySelector('#main .kpis'), c = document.querySelector('#main .card:not(.needs)'); return !!k && !!c && !!(k.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING); }));
+        else ok(`${tag}: headline figures below the round form`, await page.evaluate(() => { const k = document.querySelector('#main .kpis'), f = document.querySelector('#round-form'); return !!k && !!f && !!(f.compareDocumentPosition(k) & Node.DOCUMENT_POSITION_FOLLOWING); }));
         ok(`${tag}: four figures`, await page.locator('#main .kpi').count() === 4);
       }
       await page.screenshot({ path: `${OUT}/${tag}-home.png` });
@@ -72,7 +73,7 @@ const ROLES = [['m1', 'master'], ['o1', 'owner'], ['mg1', 'manager'], ['p1', 'pa
         ok(`${tag}: ${label} tab renders`, (await page.textContent('#main')).trim().length > 20);
         if (r === 'sales') {
           ok(`${tag}: sales has one period picker, no chip row`, await page.locator('#s-period').count() === 1 && await page.locator('[data-act="sp"][aria-pressed]').count() === 0);
-          ok(`${tag}: sales shows a record count`, await page.locator('#main .count').count() === 1);
+          ok(`${tag}: sales shows how many sales (once)`, /Sales recorded|No sales in this period/.test(await page.textContent('#main')) && await page.locator('#main .count').count() === 0);
           await page.selectOption('#s-period', '1y'); await page.waitForTimeout(300);
           ok(`${tag}: period picker applies`, await page.$eval('#s-period', e => e.value) === '1y');
         }
