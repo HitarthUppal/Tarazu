@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tarazu · Sugar Sale Intelligence System</title>
+<meta name="description" content="Tarazu helps sugar mills decide when and at what price to sell, before advice goes stale and unsold stock starts costing money. Powered by AgriMandi.">
+<meta name="theme-color" content="#1f6b4a">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta property="og:title" content="Tarazu · Sugar Sale Intelligence System">
+<meta property="og:description" content="Decide when and at what price to sell sugar, before the moment passes. Powered by AgriMandi.">
+<meta property="og:image" content="https://tarazu.live/icon-512.png">
+<style>
+@font-face{font-family:'Overpass';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/overpass-400.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/overpass-600.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/overpass-700.woff2) format('woff2')}
+@font-face{font-family:'Overpass';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/overpass-800.woff2) format('woff2')}
+@font-face{font-family:'Rozha One';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/rozha-deva.woff2) format('woff2');unicode-range:U+0900-097F,U+1CD0-1CF9,U+200C-200D,U+20A8,U+20B9,U+25CC,U+A830-A839,U+A8E0-A8FF}
+@font-face{font-family:'Rozha One';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/rozha-latin.woff2) format('woff2');unicode-range:U+0000-00FF}
+:root{
+  --paper:#f6f7f3;--card:#fff;--ink:#18201b;--muted:#5d6a61;--line:#dde2da;
+  --cane:#1f6b4a;--cane-soft:#e3efe8;--jaggery:#a8651a;--jaggery-soft:#f6ead9;--on-cane:#fff;
+  --body:"Overpass","Noto Sans Devanagari",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --brand:"Rozha One","Noto Serif Devanagari",Georgia,serif;
+  --r:16px;--wrap:1120px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#111613;--card:#19201c;--ink:#e7ece8;--muted:#9aa89f;--line:#2b352f;
+  --cane:#5cbf8e;--cane-soft:#1c3328;--jaggery:#e0a14f;--jaggery-soft:#3a2c1a;--on-cane:#0d1a13;color-scheme:dark}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:17px/1.6 var(--body);color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased}
+a{color:var(--cane)}
+img{max-width:100%}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 20px}
+.skip{position:absolute;left:-999px}.skip:focus{left:12px;top:12px;background:var(--card);padding:8px 12px;border-radius:8px;z-index:9}
+
+/* top bar */
+header.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+header.top .wrap{display:flex;align-items:center;justify-content:space-between;height:64px;gap:12px}
+.mark{display:flex;align-items:baseline;gap:8px;text-decoration:none;color:var(--ink)}
+.mark b{font:400 30px/1 var(--brand);color:var(--cane)}
+.mark i{font-style:normal;font-weight:700;font-size:15px;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+nav.links{display:flex;align-items:center;gap:22px;font-size:15px}
+nav.links a{color:var(--muted);text-decoration:none;font-weight:600}
+nav.links a:hover{color:var(--ink)}
+@media (max-width:760px){nav.links .hide-sm{display:none}}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 22px;border-radius:12px;font:700 16px/1.1 var(--body);text-decoration:none;border:1.5px solid transparent;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.btn:hover{transform:translateY(-1px)}
+.btn:focus-visible{outline:3px solid var(--jaggery);outline-offset:2px}
+.btn.primary{background:var(--cane);color:var(--on-cane);box-shadow:0 6px 18px -8px var(--cane)}
+.btn.ghost{background:var(--card);color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--cane)}
+.btn.sm{min-height:40px;padding:8px 16px;font-size:15px}
+.btn img{height:22px;width:auto;border-radius:4px;background:#fff;padding:2px 4px}
+
+/* hero */
+.hero{padding:64px 0 56px}
+.hero .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center}
+@media (max-width:900px){.hero{padding:36px 0 40px}.hero .wrap{grid-template-columns:1fr;gap:36px}}
+.eyebrow{display:inline-block;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--jaggery);background:var(--jaggery-soft);padding:5px 10px;border-radius:999px;margin-bottom:18px}
+h1{font-size:clamp(34px,5.2vw,56px);line-height:1.08;font-weight:800;letter-spacing:-.02em;margin:0 0 18px}
+h1 em{font-style:normal;color:var(--cane)}
+.lede{font-size:clamp(17px,2vw,20px);color:var(--muted);max-width:34em;margin:0 0 28px}
+.ctas{display:flex;flex-wrap:wrap;gap:12px}
+.ctas-note{font-size:14px;color:var(--muted);margin-top:14px}
+
+/* example answer card */
+.answer{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 24px 60px -30px rgba(20,40,30,.35);position:relative}
+.answer .tag{position:absolute;top:-11px;right:18px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--paper);border:1px solid var(--line);color:var(--muted);padding:3px 9px;border-radius:999px}
+.answer h3{margin:0 0 4px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.answer .act{font-size:24px;font-weight:800;line-height:1.2;margin:0 0 14px}
+.answer .act span{color:var(--cane)}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.pill{border-radius:12px;padding:10px 12px;background:var(--cane-soft)}
+.pill.warn{background:var(--jaggery-soft)}
+.pill small{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.pill b{font-size:18px}
+.pill.warn b{color:var(--jaggery)}
+@media (max-width:480px){.answer{padding:18px}.answer .act{font-size:21px}.pill{padding:9px 10px}.pill b{font-size:15.5px;white-space:nowrap}.pill small{font-size:11px}}
+.why{border-top:1px solid var(--line);padding-top:12px;font-size:15px;color:var(--muted)}
+.why li{margin:2px 0}
+.votes{display:flex;gap:6px;margin:10px 0 0}
+.votes i{flex:1;height:8px;border-radius:4px;background:var(--cane)}
+.votes i.h{background:var(--line)}
+.votes i.x{background:repeating-linear-gradient(45deg,var(--line) 0 4px,transparent 4px 8px)}
+
+/* sections */
+section.band{padding:64px 0;border-top:1px solid var(--line)}
+section.band.alt{background:var(--card)}
+h2{font-size:clamp(26px,3.4vw,38px);line-height:1.15;font-weight:800;letter-spacing:-.015em;margin:0 0 12px}
+.sec-lede{color:var(--muted);max-width:40em;margin:0 0 36px;font-size:18px}
+.problem{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:820px){.problem{grid-template-columns:1fr}}
+.cost{border:1px solid var(--line);border-radius:var(--r);padding:20px;background:var(--paper)}
+section.band:not(.alt) .cost{background:var(--card)}
+.cost b{display:block;font-size:18px;margin-bottom:4px}
+.cost p{margin:0;color:var(--muted);font-size:16px}
+
+ol.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;counter-reset:s}
+@media (max-width:980px){ol.steps{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){ol.steps{grid-template-columns:1fr}}
+ol.steps li{counter-increment:s;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+ol.steps li::before{content:counter(s);display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--cane);color:var(--on-cane);font-weight:800;margin-bottom:12px}
+ol.steps .who{display:block;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--jaggery);margin-bottom:2px}
+ol.steps b{display:block;font-size:18px;margin-bottom:6px}
+ol.steps p{margin:0;color:var(--muted);font-size:15.5px}
+
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:28px 32px}
+@media (max-width:900px){.features{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.features{grid-template-columns:1fr}}
+.feat svg{width:28px;height:28px;stroke:var(--cane);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-bottom:8px}
+.feat b{display:block;font-size:18px;margin-bottom:4px}
+.feat p{margin:0;color:var(--muted);font-size:16px}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+@media (max-width:860px){.split{grid-template-columns:1fr}}
+ul.ticks{list-style:none;padding:0;margin:0}
+ul.ticks li{position:relative;padding-left:30px;margin:0 0 12px}
+ul.ticks li::before{content:"";position:absolute;left:0;top:5px;width:18px;height:18px;border-radius:50%;background:var(--cane-soft);box-shadow:inset 0 0 0 5px var(--cane-soft),inset 0 0 0 9px var(--cane)}
+.sources{display:flex;flex-direction:column;gap:12px}
+.src{border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;background:var(--paper)}
+.src b{display:block;font-size:18px}
+.src p{margin:4px 0 0;color:var(--muted);font-size:16px}
+
+/* sign-in panel */
+.signin{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:860px){.signin{grid-template-columns:1fr}}
+.door{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:var(--r);padding:22px;background:var(--card)}
+.door.main{border-color:var(--cane);box-shadow:0 0 0 1px var(--cane) inset}
+.door b{font-size:19px}
+.door p{margin:0 0 6px;color:var(--muted);font-size:15.5px;flex:1}
+.door .btn{align-self:flex-start}
+.door .logo{height:34px;width:auto;align-self:flex-start;background:#fff;border-radius:6px;padding:4px 8px}
+
+footer{border-top:1px solid var(--line);padding:32px 0 calc(32px + env(safe-area-inset-bottom));font-size:14.5px;color:var(--muted)}
+footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center}
+footer .pw{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+footer .pw img{height:26px;width:auto;background:#fff;border-radius:5px;padding:2px 6px}
+footer nav{display:flex;flex-wrap:wrap;gap:18px}
+footer a{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}.btn:hover{transform:none}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="./" aria-label="Tarazu home"><b>तराज़ू</b><i>Tarazu</i></a>
+    <nav class="links" aria-label="Main">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#features">What you get</a>
+      <a class="btn primary sm" href="#signin">Sign in</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Sugar Sale Intelligence System</span>
+      <h1>Sell sugar at the right moment, <em>not after it has passed.</em></h1>
+      <p class="lede">Tarazu brings a mill's sale offers, an advisory panel's views and market intelligence from ChiniMandi and AgriMandi into one clear answer for the owner: what to sell, at what price, and by when.</p>
+      <div class="ctas">
+        <a class="btn primary" href="nirani/">Sign in to Nirani Group</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+      <p class="ctas-note">Tarazu is invitation only. Accounts are created by your company's administrator.</p>
+    </div>
+
+    <figure class="answer" aria-label="Example of the answer Tarazu gives an owner">
+      <span class="tag">Example</span>
+      <h3>The answer</h3>
+      <p class="act">Sell <span>2,400 qtl</span> more at ₹3,920 average</p>
+      <div class="pills">
+        <div class="pill warn"><small>Decide by</small><b>Today, 8 PM</b></div>
+        <div class="pill warn"><small>Cost of waiting</small><b>₹18,600 / day</b></div>
+        <div class="pill"><small>Panel</small><b>4 of 6 say sell</b></div>
+        <div class="pill"><small>AI brief</small><b>Leans sell</b></div>
+      </div>
+      <div class="votes" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="h"></i><i class="x"></i></div>
+      <ul class="why">
+        <li>Fortnightly quota lapses in 3 days</li>
+        <li>Prices firm, but the panel expects a softer week ahead</li>
+        <li>One advisor's advice has expired and is left out</li>
+      </ul>
+    </figure>
+  </div>
+</section>
+
+<section class="band alt" aria-labelledby="why-h">
+  <div class="wrap">
+    <h2 id="why-h">Waiting has a price</h2>
+    <p class="sec-lede">Every day sugar sits unsold while the advice behind it goes stale, the mill pays for it. Tarazu exists to cut that opportunity cost.</p>
+    <div class="problem">
+      <div class="cost"><b>Interest and storage</b><p>Stock in the godown ties up working capital and adds storage charges every single day.</p></div>
+      <div class="cost"><b>Quota that lapses</b><p>Unsold monthly quota cannot be carried forward. Miss the window and the sale is gone.</p></div>
+      <div class="cost"><b>Advice that expires</b><p>A view on prices given last week may no longer hold. Decisions made on old advice are guesses.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <h2 id="how-h">How it works</h2>
+    <p class="sec-lede">Three roles, one AI brief, and a clear deadline at every step.</p>
+    <ol class="steps">
+      <li><span class="who">Mill manager</span><b>Posts a round</b><p>Price, quantity, grade, stock in hand and quota remaining, for each mill.</p></li>
+      <li><span class="who">Advisory panel</span><b>Gives independent views</b><p>Each advisor answers separately and says how long their advice holds.</p></li>
+      <li><span class="who">Tarazu AI</span><b>Adds the market picture</b><p>A brief built on ChiniMandi news, AgriMandi reports and the mill's own sales history. It adds context, it never decides.</p></li>
+      <li><span class="who">Owner</span><b>Decides, on time</b><p>One answer card with the recommendation, the deadline and the daily cost of waiting.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band alt" id="features" aria-labelledby="feat-h">
+  <div class="wrap">
+    <h2 id="feat-h">What you get</h2>
+    <p class="sec-lede">Nothing in Tarazu is there for looks. Every screen opens with the action, then the deadline, then the reason, then the data.</p>
+    <div class="features">
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><b>Action items with Act by</b><p>Each person sees what needs doing next, soonest deadline first.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4"/></svg><b>Cost of waiting</b><p>Interest and storage per day, worked out from your own rates, so delay has a number.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14c3 0 5 2 5 5"/></svg><b>An advisory panel that stays honest</b><p>Independent views, polls and comments. Expired advice is greyed out and left out of the recommendation.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 8.3l5-.7z"/></svg><b>AI market brief</b><p>Key numbers, mill notes, risks and missing inputs, with a "good until" time so it never goes stale unnoticed.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg><b>Sales straight from your software</b><p>Sales flow in from the mill's own system, so sold quantities and averages are always current.</p></div>
+      <div class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><b>On WhatsApp and your phone</b><p>Sign in with a one-time code on WhatsApp. Apps for Android and iPhone, with alerts when it matters.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" aria-labelledby="built-h">
+  <div class="wrap split">
+    <div>
+      <h2 id="built-h">Built on sugar market intelligence</h2>
+      <p class="sec-lede" style="margin-bottom:24px">Tarazu is made by the team behind India's sugar industry news and research platforms, so the market picture comes from people who follow sugar every day.</p>
+      <ul class="ticks">
+        <li>Private and invitation only. No public sign-up.</li>
+        <li>One-time sign-in codes, sessions you can revoke from any device.</li>
+        <li>Every sensitive action is logged. Backups are encrypted every night.</li>
+        <li>The panel advises. The owner decides. The AI only adds context.</li>
+      </ul>
+    </div>
+    <div class="sources">
+      <div class="src"><b>ChiniMandi</b><p>Daily sugar, ethanol and cane news from India and abroad, filtered for what moves prices.</p></div>
+      <div class="src"><b>AgriMandi</b><p>Fortnightly sugar market reports and price outlooks.</p></div>
+      <div class="src"><b>Your own history</b><p>The mill's past sales, analysed in advance and refreshed every week.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band alt" id="signin" aria-labelledby="signin-h">
+  <div class="wrap">
+    <h2 id="signin-h">Sign in</h2>
+    <p class="sec-lede">Use the mobile number your administrator registered. We will send a one-time code on WhatsApp.</p>
+    <div class="signin">
+      <div class="door main">
+        <img class="logo" src="nirani-logo.png" alt="Nirani Group">
+        <b>Nirani Group</b>
+        <p>Owners, mill managers and advisors.</p>
+        <a class="btn primary" href="nirani/">Sign in</a>
+      </div>
+      <div class="door">
+        <b>Administrator</b>
+        <p>For the Tarazu team at AgriMandi: clients, people, security and activity.</p>
+        <a class="btn ghost" href="admin/">Admin sign in</a>
+      </div>
+      <div class="door">
+        <b>New to Tarazu?</b>
+        <p>Run a sugar mill or group and want to see it with your own figures? We will set up a walkthrough.</p>
+        <a class="btn ghost" href="mailto:hello@tarazu.live?subject=Tarazu%20walkthrough">Request a walkthrough</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="pw"><span>Powered by</span><img src="agrimandi-logo.png" alt="AgriMandi"><span>AgriMandi.live, a venture of JK India eAgriTech Limited, Mumbai</span></div>
+    <nav aria-label="Legal">
+      <a href="privacy.html">Privacy policy</a>
+      <a href="delete-account.html">Delete account</a>
+      <a href="mailto:hello@tarazu.live">Contact</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

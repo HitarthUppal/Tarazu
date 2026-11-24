@@ -2,6 +2,11 @@
 
 ## How the pieces fit
 - **Website and API**: `web/` → tarazu.live (cPanel account `tarazu`, docroot `/home2/tarazu/public_html`). PHP 8.4 + SQLite in `/home2/tarazu/tarazu_data` (outside the web root).
+- **Addresses on tarazu.live** (all from the same files, routed by `web/.htaccess`):
+  - `/` is the public landing page, `web/home.html`. No script, no data, links only.
+  - `/admin/` is the master admin sign-in (`web/index.html`). Bookmarks of the old root sign-in must move here.
+  - `/nirani/` is the Nirani app (`web/index.html`), unchanged.
+  - A master admin who signs in at `/nirani/` is sent to `/admin/`; a client user who signs in at `/admin/` is sent to their client address.
 - **AI**: n8n Cloud workflows, reached only through `api.php?op=flow` with the `X-Tarazu-Key` header.
 - **Phone apps**: `mobile/` (Capacitor 8). The screens are `web/index.html`, packed by `npm run build:www`.
 - **Builds and deploys**: GitHub Actions in this repo.
