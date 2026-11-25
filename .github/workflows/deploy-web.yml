@@ -18,11 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      HOST: https://tarazu.live:2083
+      # New server (since 25 Nov 2026): 103.67.236.18, cPanel reached through hitarthshah.com (its certificate does not cover the bare IP).
+      HOST: https://hitarthshah.com:2083
+      SERVER_IP: 103.67.236.18
       CP_USER: ${{ secrets.CPANEL_USER }}
       CP_TOKEN: ${{ secrets.CPANEL_TOKEN }}
-      DOCROOT: /home2/tarazu/public_html
-      DATADIR: /home2/tarazu/tarazu_data
+      DOCROOT: /home/tarazu/public_html
+      DATADIR: /home/tarazu/tarazu_data
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +107,8 @@ jobs:
       - name: Check the live site
         run: |
           set -e
+          # Always check the server we just deployed to, whatever DNS says (matters during a DNS change).
+          curl() { command curl --resolve "tarazu.live:443:$SERVER_IP" "$@"; }
           for f in home.html index.html sw.js manifest.webmanifest; do
             want=$(sha256sum web/$f | cut -d' ' -f1); got=$(curl -fsS "https://tarazu.live/$f?v=$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
             [ "$want" = "$got" ] && echo "ok $f" || { echo "MISMATCH $f"; exit 1; }
@@ -117,6 +121,8 @@ jobs:
           curl -fsS https://tarazu.live/admin/ | grep -q "tarazu-security v1" && echo "ok master admin at /admin/"
           curl -fsS https://tarazu.live/nirani/ | grep -q "tarazu-security v1" && echo "ok Nirani app at /nirani/"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/admin)" = "301" ] && echo "ok /admin redirects"
+          [ "$(curl -s -o /dev/null -w '%{redirect_url}' https://tarazu.live/admin)" = "https://tarazu.live/admin/" ] && echo "ok /admin redirect target"
+          curl -fsS https://tarazu.live/api.php?op=health | python3 -c "import json,sys; h=json.load(sys.stdin); assert h.get('curl'), 'PHP curl extension missing: sign-in codes and push will fail'; print('ok PHP curl')"
           curl -sI https://tarazu.live/ | grep -qi "content-security-policy" && echo "ok CSP header on /"
           curl -sI https://tarazu.live/admin/ | grep -qi "content-security-policy" && echo "ok CSP header on /admin/"
           curl -sI https://tarazu.live/nirani/ | grep -qi "content-security-policy" && echo "ok CSP header"

@@ -1,4 +1,6 @@
-# Tarazu: go-live checklist (24 Nov 2026)
+# Tarazu: go-live checklist (24 Nov 2026, server move added 25 Nov)
+
+**Server move (25 Nov):** the site is moving to 103.67.236.18. The deploy workflow now targets the new server (cPanel at hitarthshah.com:2083, paths under /home/tarazu) and checks it by IP, so it works before and after the DNS switch. Before the next deploy, replace the `CPANEL_TOKEN` secret with a token from the new server's cPanel (`CPANEL_USER` stays `tarazu`).
 
 Everything waiting to reach tarazu.live, in the order to apply it, plus what has to be true before and after the deploy. Main is at 00fcdba. Nothing below is on main yet.
 
