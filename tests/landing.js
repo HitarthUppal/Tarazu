@@ -51,6 +51,8 @@ const ok = (n, c, x) => { if (c) { pass++; console.log('  ok  ', n); } else { fa
     await page.waitForURL(u => new URL(u).pathname === '/admin/', { timeout: 15000 }).catch(() => {});
     ok('master signing in at /nirani/ lands on /admin/, not the landing page', new URL(page.url()).pathname === '/admin/', page.url());
     await ctx.close(); }
+  { const r = await fetch(`${BASE}/nirani`, { redirect: 'manual' });
+    ok('/nirani redirects to /nirani/', r.status === 301 && r.headers.get('location') === '/nirani/'); }
   { const r = await fetch(`${BASE}/admin`, { redirect: 'manual' });
     ok('/admin redirects to /admin/', r.status === 301 && r.headers.get('location') === '/admin/'); }
   { const r = await fetch(`${BASE}/admin/api.php?op=health`); ok('API answers under /admin/', r.status === 200 && (await r.json()).ok); }

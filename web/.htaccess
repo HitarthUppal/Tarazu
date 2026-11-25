@@ -8,10 +8,10 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
 # tarazu.live layout: / is the public landing page (home.html), /admin/ is the master admin sign-in,
 # /nirani/ is the Nirani app. All three use the same files on the same server.
-RewriteRule ^admin$ admin/ [R=301,L]
+RewriteRule ^admin$ /admin/ [R=301,L]
 RewriteRule ^admin/$ index.html [L]
 RewriteRule ^admin/(.+)$ $1 [L]
-RewriteRule ^nirani$ nirani/ [R=301,L]
+RewriteRule ^nirani$ /nirani/ [R=301,L]
 RewriteRule ^nirani/$ index.html [L]
 RewriteRule ^nirani/(.+)$ $1 [L]
 
