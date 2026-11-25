@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#1f6b4a"><meta name="description" content="Sugar Sale Intelligence System, powered by AgriMandi">
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Tarazu">
-<script>window.TARAZU_HOSTED={api:"api.php"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
+<script>window.TARAZU_HOSTED={api:"api.php"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"").replace(/admin\/$/i,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
 <title>Tarazu</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 
@@ -451,9 +451,9 @@ const REASONS = [["festival","Festival or seasonal demand"],["quota","Monthly qu
 const CONV = {low:1, medium:2, high:3};
 const STATE_RE = {KA:/karnataka/i, MH:/maharashtra/i, BR:/uttar pradesh/i};
 const HOSTED = window.TARAZU_HOSTED || null;
-/* tarazu.live layout: "/" is the master admin landing page; "/<client>/" (only nirani today) is that client's app. */
+/* tarazu.live layout: "/" is the public landing page (home.html), "/admin/" the master admin sign-in, "/<client>/" (only nirani today) that client's app. SITE.base is "/" on all of them. */
 const SITE = window.TARAZU_SITE || {client:null, routed:[], base:"./"};
-const siteUrl = slug => SITE.base + (slug ? slug + "/" : "");
+const siteUrl = slug => SITE.base + (slug ? slug + "/" : "admin/");  /* no client = master admin, which lives at /admin/ */
 function siteGuard(){
   if(!HOSTED || !S.me) return false;
   const want = S.me.role === "master" ? null : (SITE.routed.includes(S.me.client_id) ? S.me.client_id : SITE.client);

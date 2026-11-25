@@ -18,11 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      HOST: https://tarazu.live:2083
+      # New server (since 25 Nov 2026): 103.67.236.18, cPanel reached through hitarthshah.com (its certificate does not cover the bare IP).
+      HOST: https://hitarthshah.com:2083
+      SERVER_IP: 103.67.236.18
       CP_USER: ${{ secrets.CPANEL_USER }}
       CP_TOKEN: ${{ secrets.CPANEL_TOKEN }}
-      DOCROOT: /home2/tarazu/public_html
-      DATADIR: /home2/tarazu/tarazu_data
+      DOCROOT: /home/tarazu/public_html
+      DATADIR: /home/tarazu/tarazu_data
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +33,9 @@ jobs:
           php -l web/api.php && php -l web/cron.php
           ! grep -q "n8n.cloud" web/index.html || { echo "n8n address in page"; exit 1; }
           grep -q "tarazu-security v1" web/index.html
+          grep -q "Sell sugar at the right moment" web/home.html || { echo "landing page missing"; exit 1; }
+          ! grep -q "n8n.cloud" web/home.html || { echo "n8n address in landing page"; exit 1; }
+          grep -q "DirectoryIndex home.html" web/.htaccess || { echo ".htaccess does not serve the landing page at /"; exit 1; }
 
       - name: Snapshot the database
         run: |
@@ -86,7 +91,7 @@ jobs:
         run: |
           cd web
           ARGS=(); i=1
-          for f in index.html api.php cron.php sw.js manifest.webmanifest icon-192.png icon-512.png nirani-logo.png agrimandi-logo.png privacy.html delete-account.html .htaccess; do
+          for f in home.html index.html api.php cron.php sw.js manifest.webmanifest icon-192.png icon-512.png nirani-logo.png agrimandi-logo.png privacy.html delete-account.html .htaccess; do
             [ -f "$f" ] && ARGS+=(-F "file-$i=@$f") && i=$((i+1))
           done
           curl -fsS -H "Authorization: cpanel $CP_USER:$CP_TOKEN" -F "dir=$DOCROOT" -F "overwrite=1" "${ARGS[@]}" \
@@ -102,7 +107,9 @@ jobs:
       - name: Check the live site
         run: |
           set -e
-          for f in index.html sw.js manifest.webmanifest; do
+          # Always check the server we just deployed to, whatever DNS says (matters during a DNS change).
+          curl() { command curl --resolve "tarazu.live:443:$SERVER_IP" "$@"; }
+          for f in home.html index.html sw.js manifest.webmanifest; do
             want=$(sha256sum web/$f | cut -d' ' -f1); got=$(curl -fsS "https://tarazu.live/$f?v=$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
             [ "$want" = "$got" ] && echo "ok $f" || { echo "MISMATCH $f"; exit 1; }
           done
@@ -110,6 +117,14 @@ jobs:
           python3 -c "import json; h=json.load(open('/tmp/h.json')); assert h['ok'] and h['data_dir_outside_web'] and h['n8n_key'], h"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/config.php)" = "403" ] && echo "ok config.php blocked"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/files/x.pdf)" = "403" ] && echo "ok files/ blocked"
+          curl -fsS https://tarazu.live/ | grep -q "Sell sugar at the right moment" && echo "ok landing page at /"
+          curl -fsS https://tarazu.live/admin/ | grep -q "tarazu-security v1" && echo "ok master admin at /admin/"
+          curl -fsS https://tarazu.live/nirani/ | grep -q "tarazu-security v1" && echo "ok Nirani app at /nirani/"
+          [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/admin)" = "301" ] && echo "ok /admin redirects"
+          [ "$(curl -s -o /dev/null -w '%{redirect_url}' https://tarazu.live/admin)" = "https://tarazu.live/admin/" ] && echo "ok /admin redirect target"
+          curl -fsS https://tarazu.live/api.php?op=health | python3 -c "import json,sys; h=json.load(sys.stdin); assert h.get('curl'), 'PHP curl extension missing: sign-in codes and push will fail'; print('ok PHP curl')"
+          curl -sI https://tarazu.live/ | grep -qi "content-security-policy" && echo "ok CSP header on /"
+          curl -sI https://tarazu.live/admin/ | grep -qi "content-security-policy" && echo "ok CSP header on /admin/"
           curl -sI https://tarazu.live/nirani/ | grep -qi "content-security-policy" && echo "ok CSP header"
           curl -sI https://tarazu.live/nirani/ | grep -qi "strict-transport-security" && echo "ok HSTS header"
           [ "$(curl -s -o /dev/null -w '%{http_code}' https://tarazu.live/nirani/fonts/overpass-400.woff2)" = "200" ] && echo "ok fonts served"

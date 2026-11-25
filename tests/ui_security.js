@@ -75,8 +75,8 @@ async function api(op, body, tok) {
     const con = require('child_process').execFileSync('python3', [__dirname + '/q.py', "delete from rate"]);
   }
   { const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } }); const page = await ctx.newPage();
-    await page.goto(`${BASE}/`); await page.waitForSelector('#ph-num');
-    ok('tarazu.live root keeps the Nirani Group card', await page.locator('a.client-card').count() === 1);
+    await page.goto(`${BASE}/admin/`); await page.waitForSelector('#ph-num');
+    ok('/admin/ keeps the Nirani Group card', await page.locator('a.client-card').count() === 1);
     await page.screenshot({ path: '/tmp/tz-ui-root.png' });
     await api('update', { path: 'users/p1', data: { otp_exempt: true } }, master);
     await page.fill('#ph-num', '9000000004'); await page.click('#otp-request-form button[type=submit]');
@@ -86,7 +86,7 @@ async function api(op, body, tok) {
   console.log('\nmaster');
   { const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } }); const page = await ctx.newPage();
     const errs = []; page.on('pageerror', e => errs.push(String(e)));
-    await page.goto(`${BASE}/`); await page.waitForSelector('#ph-num');
+    await page.goto(`${BASE}/admin/`); await page.waitForSelector('#ph-num');
     await page.fill('#ph-num', '9000000001'); await page.fill('#ph-pin', '1111'); await page.click('#phone-form button[type=submit]');
     await page.waitForFunction(() => !document.querySelector('#ph-num'), null, { timeout: 10000 });
     await page.waitForTimeout(800);

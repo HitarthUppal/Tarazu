@@ -1,4 +1,4 @@
-DirectoryIndex index.html
+DirectoryIndex home.html index.html
 Options -Indexes
 RewriteEngine On
 
@@ -6,8 +6,12 @@ RewriteEngine On
 RewriteCond %{HTTPS} !=on
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
-# tarazu.live layout: /nirani/ is the Nirani app (same files, same server)
-RewriteRule ^nirani$ nirani/ [R=301,L]
+# tarazu.live layout: / is the public landing page (home.html), /admin/ is the master admin sign-in,
+# /nirani/ is the Nirani app. All three use the same files on the same server.
+RewriteRule ^admin$ /admin/ [R=301,L]
+RewriteRule ^admin/$ index.html [L]
+RewriteRule ^admin/(.+)$ $1 [L]
+RewriteRule ^nirani$ /nirani/ [R=301,L]
 RewriteRule ^nirani/$ index.html [L]
 RewriteRule ^nirani/(.+)$ $1 [L]
 
@@ -22,7 +26,7 @@ RewriteRule ^ - [L]
 RedirectMatch 404 /\.git
 
 <IfModule mod_headers.c>
-  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest|privacy\.html|delete-account\.html)$">
+  <FilesMatch "^(home\.html|index\.html|sw\.js|manifest\.webmanifest|privacy\.html|delete-account\.html)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -37,9 +41,10 @@ RedirectMatch 404 /\.git
 </IfModule>
 AddType application/manifest+json .webmanifest
 
+# PHP 8.2 on purpose: on the current server (103.67.236.18) ea-php83 has no curl extension, which sign-in codes, push and AI calls need.
 # php -- BEGIN cPanel-generated handler, do not edit
-# Set the “ea-php84” package as the default “PHP” programming language.
+# Set the “ea-php82” package as the default “PHP” programming language.
 <IfModule mime_module>
-  AddHandler application/x-httpd-ea-php84___lsphp .php .php8 .phtml
+  AddHandler application/x-httpd-ea-php82 .php .php8 .phtml
 </IfModule>
 # php -- END cPanel-generated handler, do not edit

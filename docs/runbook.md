@@ -1,7 +1,12 @@
 # Tarazu runbook
 
 ## How the pieces fit
-- **Website and API**: `web/` → tarazu.live (cPanel account `tarazu`, docroot `/home2/tarazu/public_html`). PHP 8.4 + SQLite in `/home2/tarazu/tarazu_data` (outside the web root).
+- **Website and API**: `web/` → tarazu.live, server 103.67.236.18 since 25 Nov 2026 (cPanel account `tarazu`, cPanel at https://hitarthshah.com:2083, docroot `/home/tarazu/public_html`). PHP 8.2 + SQLite in `/home/tarazu/tarazu_data` (outside the web root). PHP 8.2 because ea-php83 there has no curl extension. The previous server (192.185.166.2, `/home2/tarazu`) is kept for a week after the DNS switch as a fallback.
+- **Addresses on tarazu.live** (all from the same files, routed by `web/.htaccess`):
+  - `/` is the public landing page, `web/home.html`. No script, no data, links only.
+  - `/admin/` is the master admin sign-in (`web/index.html`). Bookmarks of the old root sign-in must move here.
+  - `/nirani/` is the Nirani app (`web/index.html`), unchanged.
+  - A master admin who signs in at `/nirani/` is sent to `/admin/`; a client user who signs in at `/admin/` is sent to their client address.
 - **AI**: n8n Cloud workflows, reached only through `api.php?op=flow` with the `X-Tarazu-Key` header.
 - **Phone apps**: `mobile/` (Capacitor 8). The screens are `web/index.html`, packed by `npm run build:www`.
 - **Builds and deploys**: GitHub Actions in this repo.
@@ -9,7 +14,7 @@
 ## GitHub secrets
 | Secret | Used by | Notes |
 |---|---|---|
-| `CPANEL_USER`, `CPANEL_TOKEN` | deploy-web | cPanel → Security → Manage API Tokens. Name it `github-deploy`, no expiry, or 1 year and rotate. |
+| `CPANEL_USER`, `CPANEL_TOKEN` | deploy-web | On the new server's cPanel (https://hitarthshah.com:2083, user `tarazu`): Security → Manage API Tokens. Name it `github-deploy`, no expiry, or 1 year and rotate. A token from the old server will not work. |
 | `N8N_KEY` | deploy-web → server | 32+ random characters. The same value goes into the key check in each Tarazu n8n workflow. |
 | `BACKUP_KEY` | deploy-web → server | 64 hex characters. **Also store offline** (password manager). Without it, backups cannot be restored. |
 | `OTP_FROM` | deploy-web → server | e.g. `no-reply@tarazu.live`. Create the mailbox in cPanel and turn on DKIM/SPF (Email Deliverability). |
@@ -29,7 +34,7 @@ keytool -genkeypair -keystore tarazu-upload.keystore -storetype PKCS12 -alias ta
 ```
 Then add `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded: `certutil -encode` on Windows, then strip the header lines), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` (the same password) and `ANDROID_KEY_ALIAS` = `tarazu-upload`.
 
-Server-side push keys are files placed in `/home2/tarazu/tarazu_data/` by hand (never in the repo): `fcm-service-account.json` (Firebase service account) and `apns-key.p8`, plus `APNS_KEY_ID` and `APNS_TEAM_ID` defined in `config.php`.
+Server-side push keys are files placed in `/home/tarazu/tarazu_data/` by hand (never in the repo): `fcm-service-account.json` (Firebase service account) and `apns-key.p8`, plus `APNS_KEY_ID` and `APNS_TEAM_ID` defined in `config.php`.
 
 ## Cutover to the hardened version (one time)
 1. Add the GitHub secrets above (at least the cPanel token, `N8N_KEY`, `BACKUP_KEY` and `OTP_FROM`).
@@ -38,12 +43,12 @@ Server-side push keys are files placed in `/home2/tarazu/tarazu_data/` by hand (
 4. Lock n8n the same hour: add the `X-Tarazu-Key` check to the Tarazu webhooks (API, Intelligence v2, Quota Sync), rotate the webhook paths, set the `HOOK_*` secrets, and redeploy. Until this is done, the old webhook addresses still work for anyone who copied them.
 5. In n8n, set the voice workflow to not save successful executions, so voice audio is not retained (the privacy policy says so).
 6. Move old report PDFs from `public_html/files/` to `tarazu_data/files/`. They still open from the old place meanwhile, but only through signed links.
-7. Add the cron job in cPanel: `*/15 * * * * php /home2/tarazu/public_html/cron.php >/dev/null 2>&1`. This runs notifications and the nightly encrypted backup.
+7. Add the cron job in cPanel: `*/15 * * * * php /home/tarazu/public_html/cron.php >/dev/null 2>&1`. This runs notifications and the nightly encrypted backup.
 8. In Master admin: switch the demo off, clear demo data, change default PINs, add everyone's mobile number and email. Then turn on **Require phone sign-in** and, once emails are in, **Require a one-time code**.
 9. Rotate the cPanel password (it was shared in chat earlier), delete temporary credentials, and turn on cPanel two-factor sign-in.
 
 ## Restore a backup
-Backups: `/home2/tarazu/tarazu_data/backups/tarazu-YYYYMMDD-HHMMSS.sqlite.gz.enc` (30 kept). Format: `TZB1` | 12-byte IV | 16-byte GCM tag | ciphertext of a gzipped SQLite file. Key = SHA-256 of `BACKUP_KEY`.
+Backups: `/home/tarazu/tarazu_data/backups/tarazu-YYYYMMDD-HHMMSS.sqlite.gz.enc` (30 kept). Format: `TZB1` | 12-byte IV | 16-byte GCM tag | ciphertext of a gzipped SQLite file. Key = SHA-256 of `BACKUP_KEY`.
 ```
 php -r '$r=file_get_contents($argv[1]); $k=hash("sha256",getenv("BACKUP_KEY"),true);
   $p=openssl_decrypt(substr($r,32),"aes-256-gcm",$k,OPENSSL_RAW_DATA,substr($r,4,12),substr($r,16,16));

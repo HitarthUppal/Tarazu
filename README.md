@@ -4,7 +4,7 @@ Sugar Sale Intelligence System, powered by AgriMandi. Built for Nirani Group by 
 
 | Folder | What |
 |---|---|
-| `web/` | The website and API as deployed to tarazu.live (PHP + SQLite). `config.php` and the database stay on the server. |
+| `web/` | The website and API as deployed to tarazu.live (PHP + SQLite): `home.html` is the landing page at `/`, `index.html` the app at `/admin/` and `/nirani/`. `config.php` and the database stay on the server. |
 | `mobile/` | iOS and Android apps (Capacitor 8). `npm run build:www` packs `web/index.html` into the app. |
 | `tests/` | Local test server, 71 API security checks, browser checks, app-bundle checks. |
 | `tools/` | Repeatable patch scripts. |
