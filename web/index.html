@@ -4,7 +4,10 @@
 <meta name="theme-color" content="#1f6b4a"><meta name="description" content="Sugar Sale Intelligence System, powered by AgriMandi">
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Tarazu">
-<script>window.TARAZU_HOSTED={api:"api.php"};(function(){var m=location.pathname.match(/\/(nirani)\/?(index\.html)?$/i);window.TARAZU_SITE={client:m?m[1].toLowerCase():null,routed:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"").replace(/admin\/$/i,"")};if(m)document.title="Tarazu \u00b7 Nirani Group";})();</script>
+<script>(function(){var m=location.pathname.match(/\/(nirani|gurudatt)\/?(index\.html)?$/i),c=m?m[1].toLowerCase():null,demo=c==="gurudatt";
+/* /gurudatt/ is a sample client: the same app on an in-browser store (demo-store.js), never api.php */
+window.TARAZU_DEMO=demo;window.TARAZU_HOSTED=demo?null:{api:"api.php"};window.TARAZU_SITE={client:c,routed:demo?["gurudatt"]:["nirani"],base:m?location.pathname.slice(0,m.index+1):location.pathname.replace(/[^\/]*$/,"").replace(/admin\/$/i,"")};
+if(m)document.title=demo?"Tarazu \u00b7 Shri Gurudatt Sugars":"Tarazu \u00b7 Nirani Group";if(demo)document.write('<script src="demo-store.js"><\/script>');})();</script>
 <title>Tarazu</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 
@@ -407,6 +410,16 @@ body.phone table.stack td input{width:100%;min-width:0}
 body.phone table.stack tfoot tr{grid-template-columns:repeat(3,minmax(0,1fr))}
 body.phone table.stack tfoot td:first-child{grid-column:auto}
 .mcards{display:flex;flex-direction:column;gap:8px}
+.mstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:0 0 8px}
+.mstats .ms{background:var(--paper);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:1px}
+.mstats .ms small{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.mstats .ms b{font-size:20px}
+.mstats .ms.hi{background:var(--cane-soft)}.mstats .ms.hi b{color:var(--cane)}
+.one-ask{display:flex;flex-direction:column;gap:10px;margin:0 0 12px}
+.one-ask .pill-row button[aria-pressed="true"],#decision-form .pill-row button[aria-pressed="true"]{background:var(--cane-soft);border-color:var(--cane);color:var(--cane)}
+.one-in{display:flex;flex-direction:column;gap:6px;font-weight:700}
+.one-in input{font-size:24px;font-weight:800;padding:12px 14px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 14px}.kv b{text-align:right}
 .mcard{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:6px 10px;align-items:center;background:var(--card)}
 .mc-main{display:flex;flex-direction:column;gap:2px;min-width:0}
 .mc-main > b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -451,6 +464,7 @@ const REASONS = [["festival","Festival or seasonal demand"],["quota","Monthly qu
 const CONV = {low:1, medium:2, high:3};
 const STATE_RE = {KA:/karnataka/i, MH:/maharashtra/i, BR:/uttar pradesh/i};
 const HOSTED = window.TARAZU_HOSTED || null;
+const DEMO = !!window.TARAZU_DEMO;  /* sample client at /gurudatt/: in-browser data, role picker instead of sign-in */
 /* tarazu.live layout: "/" is the public landing page (home.html), "/admin/" the master admin sign-in, "/<client>/" (only nirani today) that client's app. SITE.base is "/" on all of them. */
 const SITE = window.TARAZU_SITE || {client:null, routed:[], base:"./"};
 const siteUrl = slug => SITE.base + (slug ? slug + "/" : "admin/");  /* no client = master admin, which lives at /admin/ */
@@ -481,7 +495,8 @@ const fmtDay = iso => { if(!iso) return ""; const d = new Date(iso.length===10?i
 const monthLabel = mk => new Date(mk + "-01T00:00").toLocaleDateString("en-IN",{month:"long", year:"numeric"});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const median = a => { const s = a.filter(x => x!=null && isFinite(x)).sort((x,y)=>x-y); if(!s.length) return null; const m = Math.floor(s.length/2); return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
-const store = { get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ if(v==null) localStorage.removeItem(k); else localStorage.setItem(k,v); }catch(e){} } };
+const SK = k => (DEMO ? "gd:" : "") + k;  /* the sample keeps its own sign-in, so trying it never signs anyone out of a real client */
+const store = { get(k){ try{ return localStorage.getItem(SK(k)); }catch(e){ return null; } }, set(k,v){ try{ if(v==null) localStorage.removeItem(SK(k)); else localStorage.setItem(SK(k),v); }catch(e){} } };
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(()=>{ t.hidden = true; }, 2600); }
 const settings = () => ({ rate:num(S.settings.interest_rate_pct ?? 10), storage:num(S.settings.storage_per_qtl_month ?? 8), example:!!S.settings.example, flagField:S.news.news_flag_field||"", flagValue:S.news.news_flag_value||"" });
 const isMaster = () => !!(S.me && S.me.role === "master");
@@ -491,6 +506,12 @@ const roleLabel = r => ({master:"Master admin", owner:"Owner", manager:"Mill man
 const userName = id => (S.users.find(u => u.id === id) || {}).name || "Former member";
 const panelists = () => S.users.filter(u => u.role === "panelist" && u.active !== false && u.client_id === S.client).sort((a,b) => String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
 const millsSorted = () => S.mills.slice().sort((a,b) => num(a.unit_no) - num(b.unit_no));
+/* single-mill clients (e.g. Shri Gurudatt): no mill-wise tables, totals or per-mill splits anywhere */
+const ONE = () => S.mills.length === 1;
+const oneRound = r => (r.mills || []).length === 1;
+const STATE_NAME = {KA:"S. Karnataka", MH:"Maharashtra", BR:"Uttar Pradesh"};
+const homeState = () => { const st = [...new Set(S.mills.map(m => m.state).filter(Boolean))]; return st.length === 1 && STATE_RE[st[0]] ? st[0] : "KA"; };
+const spotName = () => STATE_NAME[homeState()] || "S. Karnataka";
 const balQuota = m => Math.max(0, num(m.quota) - num(m.sold_qty));
 const balStock = m => Math.max(0, num(m.stock_wh) - num(m.sold_qty));
 const viewsFor = id => S.rviews.filter(v => v.round_id === id);
@@ -502,11 +523,12 @@ function spotFor(state, grade){
   const g = (grade === "M" ? row.m30 : row.s30) || row.s30 || row.m30;
   return g ? {mid:g.mid, lo:g.lo, hi:g.hi, label:row.state + " " + ((grade==="M"||!row.s30)?"M/30":"S/30")} : null;
 }
-const refSpot = () => (spotFor("KA", typeof V3 !== "undefined" && V3 ? "M" : "S") || {}).mid || null;
+const refSpot = () => (spotFor(homeState(), typeof V3 !== "undefined" && V3 ? "M" : "S") || {}).mid || null;
 
 /* ---------- n8n through the connector ---------- */
 function mcpMessage(e){
   const c = e && e.code, em = String((e && e.message) || "");
+  if(c === "demo") return em;
   if(HOSTED){
     if(/failed to fetch|networkerror|load failed/i.test(em)) return "Couldn't reach the live service. Check the internet connection and try again.";
     if(c === "flow_error" && /\((5\d\d|0)\)/.test(em)) return "The AI service had a problem. Please try again in a minute.";
@@ -572,6 +594,7 @@ const askLine = r => V3 ? askLineV3(r) : r && num(r.ask_rate) ? `<div class="ask
 /* tarazu-security v1 */
 const HOOKS = {"Market In":1,"Brief In":1,"Voice Note In":1,"Report In":1};
 async function runFlow(triggerName, body, resultNode){
+  if(DEMO) throw {code:"demo", message:"This is sample data, so the AI brief here was written in advance. On your own data, Tarazu writes a fresh brief for every round."};
   if(HOSTED){
     if(!HOOKS[triggerName]) throw {code:"flow_error", message:"Unknown workflow."};
     const r = await fetch(HOSTED.api + "?op=flow&trigger=" + encodeURIComponent(triggerName), {method:"POST", headers:{"Content-Type":"application/json", "X-Token":store.get("tarazu.token")||""}, body:JSON.stringify(body)});
@@ -757,8 +780,9 @@ function sheetHtml(){
       ${webPush ? `<button class="row-btn" data-act="push"><span>Notifications on this device</span><span>${pushLabel().replace("🔔 ", "")}</span></button>` : ""}
       ${native ? `<button class="row-btn" data-act="bio-lock"><span>Lock with Face ID or fingerprint</span><span>${lock}</span></button>` : ""}
       ${secRoute ? `<button class="row-btn" data-act="go" data-route="${secRoute}"><span>${secLabel}</span><span>›</span></button>` : ""}
-      <button class="row-btn" data-act="sec-logout-all"><span>Sign out my other devices</span><span>›</span></button>
-      <button class="row-btn danger" data-act="logout"><span>Sign out</span><span></span></button>
+      ${DEMO ? `<button class="row-btn" data-act="logout"><span>Switch role</span><span>›</span></button>
+      <button class="row-btn" data-act="demo-reset"><span>Reset the sample data</span><span>›</span></button>` : `<button class="row-btn" data-act="sec-logout-all"><span>Sign out my other devices</span><span>›</span></button>
+      <button class="row-btn danger" data-act="logout"><span>Sign out</span><span></span></button>`}
     </div>
     <div class="pw">Powered by <img src="agrimandi-logo.png" alt="AgriMandi"></div>`;
 }
@@ -815,11 +839,11 @@ function renderCore(){
     ${HOSTED && "Notification" in window && "serviceWorker" in navigator ? `<button class="ghost sm" data-act="push" title="Notifications on this device">${pushLabel()}</button>` : ""}
     ${viaMaster() ? `<span class="chip warn">Master admin viewing as ${esc(S.me.name)}</span> <button class="sm" data-act="back-master">Back to master</button>` : `${esc(S.me.name)} · ${esc(roleLabel(S.me.role))}`} <button class="ghost sm" data-act="logout">Switch user</button>` : "");
   const ct = $("#client-tag"); if(ct) ct.textContent = S.client && S.me ? " · " + clientName(S.client) : "";
-  const clogo = $("#client-logo"); if(clogo) clogo.hidden = !SITE.client;
+  const clogo = $("#client-logo"); if(clogo){ clogo.hidden = !SITE.client; if(SITE.client && !clogo.src.endsWith(SITE.client + "-logo.png")){ clogo.src = SITE.client + "-logo.png"; clogo.alt = clientName(SITE.client); } }
   const m = $("#main");
   if(S.err.db){ m.innerHTML = `<div class="notice err">${esc(S.err.db)}</div>`; return; }
   if(!S.loaded.users) return;
-  if(!S.me){ setTabs(null); m.innerHTML = phoneLoginView(); if(S.draft.focusOtp){ S.draft.focusOtp = false; setTimeout(() => { const e = $("#ph-otp"); if(e) e.focus(); }, 0); } return; }
+  if(!S.me){ setTabs(null); m.innerHTML = DEMO ? demoLoginView() : phoneLoginView(); if(S.draft.focusOtp){ S.draft.focusOtp = false; setTimeout(() => { const e = $("#ph-otp"); if(e) e.focus(); }, 0); } return; }
   const r = S.me.role, rt = S.route.name;
   if(rt === "panel" && r !== "panelist") markPanelSeen();
   if(r === "manager"){
@@ -852,7 +876,7 @@ function loginView(){
   const groups = (SITE.client ? [["Management", us.filter(u => u.role !== "panelist")], ["Advisory panel", us.filter(u => u.role === "panelist")]] : [["Master admin", ms]]).filter(g => g[1].length);
   const clientCards = SITE.client ? "" : `<div class="client-pick"><h3>Clients</h3>${SITE.routed.map(slug => { const c = S.clients.find(x => x.id === slug); return `<a class="client-card" href="${esc(siteUrl(slug))}"><img src="${esc(slug)}-logo.png" alt="${esc((c && c.name) || "Nirani Group")}"><b>Open →</b></a>`; }).join("")}</div>`;
   return `<div class="login-wrap">
-  <section class="hero"><div class="hero-brand">${SITE.client ? `<img class="client-hero-logo" src="${esc(SITE.client)}-logo.png" alt="Nirani Sugars"><span class="hero-sep" aria-hidden="true"></span>` : ""}<div class="mark">तराज़ू<small>Tarazu</small></div></div><p class="muted">Sugar Sale Intelligence System</p><p class="powered-line">Powered by <img class="am-logo lg" src="agrimandi-logo.png" alt="AgriMandi" onerror="this.replaceWith(Object.assign(document.createElement('em'),{textContent:'AgriMandi'}))"></p>
+  <section class="hero"><div class="hero-brand">${SITE.client ? `<img class="client-hero-logo" src="${esc(SITE.client)}-logo.png" alt="${esc(clientName(SITE.client))}"><span class="hero-sep" aria-hidden="true"></span>` : ""}<div class="mark">तराज़ू<small>Tarazu</small></div></div><p class="muted">Sugar Sale Intelligence System</p><p class="powered-line">Powered by <img class="am-logo lg" src="agrimandi-logo.png" alt="AgriMandi" onerror="this.replaceWith(Object.assign(document.createElement('em'),{textContent:'AgriMandi'}))"></p>
     <ul class="login-points"><li>Mill-wise stock and quota in one place, ready for each sale decision.</li><li>Independent views from the advisory panel, with reasons and revisions.</li><li>Live ChiniMandi prices and AgriMandi outlooks beside every round.</li></ul></section>
   ${clientCards}<section class="card login-card"><div class="row between"><h2>${SITE.client ? "Sign in" : "Master admin sign in"}</h2>${S.clients.length > 1 && !SITE.client ? `<label style="flex-direction:row;align-items:center;gap:8px">Client<select id="login-client" style="width:auto">${S.clients.map(c => `<option value="${esc(c.id)}" ${c.id===lc?"selected":""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}</div>
     ${V3 && masterToken() ? `<div class="notice small" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Master admin is signed in on this device: pick anyone, no PIN needed.</span><button type="button" class="sm" data-act="master-signout">Sign out of master admin</button></div>` : ""}
@@ -870,6 +894,19 @@ function phCount(v){
   return `<span class="dots" aria-hidden="true">${Array.from({length:10}, (_, i) => `<i class="${i < k ? "on" : ""}"></i>`).join("")}</span><span class="${n === 10 ? "ok" : n > 10 ? "bad" : ""}">${n === 10 ? "✓ 10/10" : n + "/10"}</span>`;
 }
 document.addEventListener("input", e => { if(e.target && e.target.id === "ph-num"){ const c = $("#ph-count"); if(c) c.innerHTML = phCount(e.target.value); } });
+function demoLoginView(){
+  const order = {owner:0, manager:1, panelist:2};
+  const us = S.users.filter(u => u.active !== false && u.client_id === SITE.client).sort((a,b) => (order[a.role]-order[b.role]) || String(a.name).localeCompare(String(b.name)));
+  const tile = u => `<button data-act="demo-login" data-id="${esc(u.id)}">${esc(u.name)}<small>${esc(roleLabel(u.role))}</small></button>`;
+  return `<div class="login-wrap">
+  <section class="hero"><div class="hero-brand"><img class="client-hero-logo" src="${esc(SITE.client)}-logo.png" alt="${esc(clientName(SITE.client))}"><span class="hero-sep" aria-hidden="true"></span><div class="mark">तराज़ू<small>Tarazu</small></div></div><p class="muted">Sugar Sale Intelligence System</p><p class="powered-line">Powered by <img class="am-logo lg" src="agrimandi-logo.png" alt="AgriMandi"></p>
+    <ul class="login-points"><li>One mill, Takaliwadi: stock, fortnight quota and sales in one place.</li><li>Five independent advisors, with an AI brief that leads with what to do.</li><li>The owner decides; the manager gets it as an action item.</li></ul></section>
+  <section class="card login-card"><h2>Open the sample as</h2>
+    <p class="small muted">Sample data for a walkthrough. No sign-in code needed, and nothing you do here reaches a real account.</p>
+    ${[["Management", us.filter(u => u.role !== "panelist")], ["Advisory panel", us.filter(u => u.role === "panelist")]].filter(g => g[1].length).map(([h, list]) => `<div class="login-group"><h3>${h}</h3><div class="login-list">${list.map(tile).join("")}</div></div>`).join("")}
+    <p class="small muted">Start with the <b>Managing Director</b>: a round closed an hour ago and is waiting for a decision. Switch roles any time from the account button. <button type="button" class="ghost sm" data-act="demo-reset">Reset the sample</button></p>
+  </section></div>`;
+}
 function phoneLoginView(){ /* tarazu-login v2 */
   const otp = otpRequired(), step2 = otp && S.draft.otpFor && !S.draft.otpPin;
   const pinStep = !otp || S.draft.otpPinInstead;
@@ -889,7 +926,7 @@ function phoneLoginView(){ /* tarazu-login v2 */
         <button class="primary" type="submit">${pinStep ? "Sign in" : "Get OTP"}</button>
       </form>`;
   return `<div class="login-wrap">
-  <section class="hero"><div class="hero-brand">${SITE.client ? `<img class="client-hero-logo" src="${esc(SITE.client)}-logo.png" alt="Nirani Sugars"><span class="hero-sep" aria-hidden="true"></span>` : ""}<div class="mark">तराज़ू<small>Tarazu</small></div></div><p class="muted">Sugar Sale Intelligence System</p><p class="powered-line">Powered by <img class="am-logo lg" src="agrimandi-logo.png" alt="AgriMandi" onerror="this.replaceWith(Object.assign(document.createElement('em'),{textContent:'AgriMandi'}))"></p>
+  <section class="hero"><div class="hero-brand">${SITE.client ? `<img class="client-hero-logo" src="${esc(SITE.client)}-logo.png" alt="${esc(clientName(SITE.client))}"><span class="hero-sep" aria-hidden="true"></span>` : ""}<div class="mark">तराज़ू<small>Tarazu</small></div></div><p class="muted">Sugar Sale Intelligence System</p><p class="powered-line">Powered by <img class="am-logo lg" src="agrimandi-logo.png" alt="AgriMandi" onerror="this.replaceWith(Object.assign(document.createElement('em'),{textContent:'AgriMandi'}))"></p>
     <ul class="login-points"><li>Sign in with the mobile number your administrator registered.</li><li>${otp ? "A 6-digit code arrives on WhatsApp. It works for 5 minutes." : "Use the PIN your administrator gave you."}</li><li>This device stays signed in for 30 days, until you sign out.</li></ul></section>
   ${clientCards}<section class="card login-card"><h2>${SITE.client ? "Sign in" : "Sign in to Tarazu"}</h2>
     ${form}
@@ -973,6 +1010,25 @@ function marketPage(){ return `<div class="list">${spotCard(false)}${newsCard()}
 
 /* ---------- mills table (owner and manager) ---------- */
 function totals(ms){ const t = {stock:0, quota:0, sold:0, value:0, bq:0, bs:0, wish:0}; ms.forEach(m => { t.stock += num(m.stock_wh); t.quota += num(m.quota); t.sold += num(m.sold_qty); t.value += num(m.sold_qty)*num(m.sold_avg_price); t.bq += balQuota(m); t.bs += balStock(m); t.wish += num(m.wish_to_sell); }); t.avg = t.sold ? t.value/t.sold : 0; return t; }
+function millOne(editable){
+  const m = millsSorted()[0], bq = balQuota(m), pct = false, w = num(m.wish_to_sell);
+  const stat = (l, v, sub, cls) => `<div class="ms${cls ? " " + cls : ""}"><small>${l}</small><b class="num">${v}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
+  const stats = `<div class="mstats">
+    ${stat("Stock in warehouse", q(m.stock_wh), "qtl")}${stat("Quota this period", q(m.quota), "qtl")}
+    ${stat("Sold", q(m.sold_qty), num(m.sold_avg_price) ? "at " + inr(m.sold_avg_price) + " avg" : "qtl")}${stat("Balance quota", q(bq), "qtl", "hi")}
+    ${stat("Balance stock", q(balStock(m)), "qtl")}</div>`;
+  if(!editable) return `${stats}<p class="small muted">${m.code ? "Plant code " + esc(m.code) + " · " : ""}sold figures come from the sales feed.</p>`;
+  const inp = (k, l) => `<label class="mc-f">${l}<input data-mill="${esc(m.id)}" data-k="${k}" inputmode="numeric" value="${has(m[k]) ? esc(m[k]) : ""}"></label>`;
+  return `<div class="one-ask">
+      <label class="one-in"><span>How much to offer${pct ? ", % of balance quota" : ", quintals"}</span>
+      ${pct ? `<input data-millpct="${esc(m.id)}" inputmode="decimal" placeholder="0" value="${has(m.wish_to_sell) && bq ? pctOf(m.wish_to_sell, bq) : ""}">`
+            : `<input data-mill="${esc(m.id)}" data-k="wish_to_sell" inputmode="numeric" placeholder="0" value="${w ? esc(m.wish_to_sell) : ""}">`}</label>
+      <div class="pill-row" role="group" aria-label="Quick amounts">${[25, 50, 75, 100].map(p => `<button type="button" class="sm" data-act="wish-pct" data-k="${p}" aria-pressed="${!!bq && w === up10(bq * p / 100, bq)}">${p === 100 ? "All" : p + "%"}</button>`).join("")}</div>
+      <p class="small" style="margin:0">${w ? `Offering <b class="num">${qtl(w)}</b>, ${pctOf(w, bq)}% of the balance quota of ${qtl(bq)}.` : `Balance quota: <b class="num">${qtl(bq)}</b>.`}${w > bq ? ` <span style="color:var(--danger)">More than the balance quota.</span>` : ""}</p>
+    </div>
+    ${stats}
+    <details><summary class="small">Correct stock or quota</summary><div class="grid2">${inp("stock_wh", "Stock in warehouse")}${inp("quota", "Quota this period")}</div><p class="small muted">Sold figures come from the sales feed.</p></details>`;
+}
 function millsPhone(editable){
   const ms = millsSorted(), t = totals(ms), pct = V2 && S.draft.wishUnit === "pct";
   if(!editable) return `<div class="tablewrap"><table class="compact"><thead><tr><th>Mill</th><th class="r">Bal. quota</th><th class="r">Sold avg</th></tr></thead>
@@ -988,6 +1044,7 @@ function millsPhone(editable){
     <p class="small"><b class="num">${qtl(t.wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills. Sold figures come from the sales feed.</p>`;
 }
 function millsTable(editable){
+  if(ONE()) return millOne(editable);
   if(document.body.classList.contains("phone")) return millsPhone(editable);
   const ms = millsSorted(), t = totals(ms);
   const inp = (m, k) => `<input data-mill="${esc(m.id)}" data-k="${k}" inputmode="numeric" aria-label="${esc(m.name)} ${k}" value="${has(m[k])?esc(m[k]):""}">`;
@@ -1012,8 +1069,8 @@ function ownerHome(){
     ${latestRoundCard()}
     <div class="row between"><h1>Group position</h1><span class="small muted">${esc(clientName(S.client))} · ${esc(monthLabel(new Date().toISOString().slice(0,7)))}</span></div>
     <div class="stat"><div><div class="n num">${q(t.bq)}</div><div class="l">Balance quota, qtl</div></div><div><div class="n num">${q(t.sold)}</div><div class="l">Sold this month, qtl</div></div>
-      <div><div class="n num">${t.avg?inr(t.avg):"–"}</div><div class="l">Average sold price</div></div><div><div class="n num">${refSpot()?inr(refSpot()):"–"}</div><div class="l">S. Karnataka S/30 spot</div></div></div>
-    <section class="card"><div class="row between"><h2>Mill-wise position</h2><span class="small muted">${millsSorted().length} units</span></div>${millsTable(false)}</section>
+      <div><div class="n num">${t.avg?inr(t.avg):"–"}</div><div class="l">Average sold price</div></div><div><div class="n num">${refSpot()?inr(refSpot()):"–"}</div><div class="l">${spotName()} S/30 spot</div></div></div>
+    <section class="card"><div class="row between"><h2>${ONE() ? esc(millsSorted()[0].name) + " mill" : "Mill-wise position"}</h2><span class="small muted">${ONE() ? esc(millsSorted()[0].location || "") : millsSorted().length + " units"}</span></div>${millsTable(false)}</section>
     <section class="card"><div class="row between"><h2>Advisory rounds awaiting you</h2><button class="ghost" data-act="go" data-route="rounds">All rounds</button></div>
       ${open.length?`<div class="${V2?"rgrid":"list"}">${open.map(roundItem).join("")}</div>`:`<div class="empty">No open rounds. The mill manager starts one from the Mills screen.</div>`}</section>
     ${salesHistoryCard()}
@@ -1024,7 +1081,7 @@ function roundItem(r){
   const vs = viewsFor(r.id), sp = splitOf(vs, r);
   const total = (r.mills||[]).reduce((s,m) => s + num(m.wish_to_sell), 0);
   return `<button class="card item" data-act="open" data-id="${esc(r.id)}"><div class="row between"><b>${esc(r.title || "Advisory round")}</b>${roundChip(r)}</div>
-    <span class="small">${qtl(total)}${num(r.ask_rate)?` at <b>${inr(r.ask_rate)}</b> avg`:""} to sell across ${(r.mills||[]).filter(m => num(m.wish_to_sell)).length} mills · closes ${esc(fmtDate(r.valid_until))}${r.example?` · <span class="chip ex">example</span>`:""}</span>
+    <span class="small">${qtl(total)}${num(r.ask_rate)?` at <b>${inr(r.ask_rate)}</b> avg`:""} ${oneRound(r) ? "offered" : `to sell across ${(r.mills||[]).filter(m => num(m.wish_to_sell)).length} mills`} · closes ${esc(fmtDate(r.valid_until))}${r.example?` · <span class="chip ex">example</span>`:""}</span>
     <span class="small muted">${vs.length} of ${panelists().length} views${vs.length?` · panel median: sell ${Math.round(sp.medPct)}%${sp.medRate?` at ${inr(sp.medRate)}`:""}`:""}${sp.close?" · close split":""}</span></button>`;
 }
 function stanceCount(vs){ const c = {sell:0, some:0, hold:0}; vs.forEach(v => c[vStance(v)]++); return c; }
@@ -1044,7 +1101,7 @@ function roundItemV2(r){
   const fl = flagsOf(r).filter(f => f.k !== "closing");
   return `<button class="card item rcard" data-act="open" data-id="${esc(r.id)}">
     <div class="row between"><b>${esc(r.title || "Advisory round")}</b>${roundChip(r)}</div>
-    <div class="row between" style="align-items:baseline"><span class="askmini num">${V3 ? bandTxt(r) : num(r.ask_rate) ? inr(r.ask_rate) : "–"}</span><span class="small muted">${qtl(total)} · ${ms.length} mills</span></div>
+    <div class="row between" style="align-items:baseline"><span class="askmini num">${V3 ? bandTxt(r) : num(r.ask_rate) ? inr(r.ask_rate) : "–"}</span><span class="small muted">${qtl(total)}${oneRound(r) ? "" : ` · ${ms.length} mills`}</span></div>
     ${fl.length ? `<span class="flagline">${fl.map(f => esc(f.label)).join(" · ")}</span>` : ""}
     ${owner ? miniBar(vs) : ""}
     <span class="small">${line}</span>${d}
@@ -1097,7 +1154,7 @@ function roundsList(){
 }
 
 /* ---------- manager ---------- */
-function askGap(v){ const a = pnum(v); return a && refSpot() ? `${signed(a - refSpot())}/qtl against today's S. Karnataka S/30 spot of ${inr(refSpot())}` : (refSpot() ? `Today's S. Karnataka S/30 spot: ${inr(refSpot())}` : ""); }
+function askGap(v){ const a = pnum(v); return a && refSpot() ? `${signed(a - refSpot())}/qtl against today's ${spotName()} S/30 spot of ${inr(refSpot())}` : (refSpot() ? `Today's ${spotName()} S/30 spot: ${inr(refSpot())}` : ""); }
 function managerHome(){
   if(V3) return managerHomeV3();
   const ms = millsSorted();
@@ -1119,7 +1176,7 @@ function managerHome(){
       ${V2 ? `<fieldset class="flags-pick"><legend>Anything urgent the panel must know?</legend><span class="small muted">Only ticked items show at the top of the round, in red.</span>${FLAGS.map(([k,l,ds]) => `<label class="chk"><input type="checkbox" data-flag="${k}" ${rd.flags && rd.flags[k] ? "checked" : ""}><span><b>${l}</b><small>${ds}</small></span></label>`).join("")}</fieldset>` : ""}
       <label>Note for the panel (optional)<textarea id="rd-note" placeholder="e.g. cane payments due on the 5th; buyers active in Bengaluru">${esc(rd.note||"")}</textarea></label>
       <div class="row between"><span class="small"><b class="num">${qtl(wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills</span><button class="primary" type="submit" ${wish?"":"disabled"}>Send to the panel</button></div>
-      ${wish?"":`<p class="small muted">Enter a wish-to-sell quantity for at least one mill in step 1 to send the round.</p>`}
+      ${wish?"":`<p class="small muted">${ONE() ? "Enter how much to offer in step 1 to send the round." : "Enter a wish-to-sell quantity for at least one mill in step 1 to send the round."}</p>`}
     </form>
     ${railBelow()}
   </div></div>`;
@@ -1303,6 +1360,7 @@ async function runBrief(id){
 
 /* ---------- owner decision ---------- */
 function decisionForm(r){
+  if(oneRound(r)) return decisionFormOne(r);
   const ms = (r.mills||[]).filter(m => num(m.wish_to_sell)), vs = viewsFor(r.id);
   if(S.draft.forDecision !== r.id){
     const rows = {}; ms.forEach(m => { const mp = median(vs.map(v => effFor(v,m.id).pct)) ?? 0, mr = median(vs.map(v => effFor(v,m.id).rate).filter(Boolean)) || num(r.ask_rate) || refSpot() || ""; rows[m.id] = {qty: V2 ? up10(num(m.wish_to_sell)*mp/100, m.wish_to_sell) : Math.round(num(m.wish_to_sell)*mp/100), rate: mr ? Math.round(mr) : ""}; });
@@ -1319,10 +1377,27 @@ function decisionForm(r){
     ${S.err.decision?`<div class="notice err">${esc(S.err.decision)}</div>`:""}
     <button class="primary" type="submit">${d.confirmDecision ? "Tap again to record and send to the manager" : "Record decision and send to manager"}</button>${d.confirmDecision ? `<p class="small muted" style="margin:0">This sends the decision to the mill manager. Change any figure to cancel.</p>` : ""}</form>`;
 }
+function decisionFormOne(r){
+  const m = r.mills[0], vs = viewsFor(r.id), w = num(m.wish_to_sell);
+  const medP = median(vs.map(v => effFor(v, m.id).pct)), medR = median(vs.map(v => effFor(v, m.id).rate).filter(Boolean));
+  if(S.draft.forDecision !== r.id){ const rt = medR || num(r.ask_rate) || refSpot() || "";
+    S.draft = {forDecision:r.id, rows:{[m.id]:{qty:up10(w * (medP ?? 0) / 100, w), rate:rt ? Math.round(rt) : ""}}, dnote:""}; }
+  const d = S.draft, x = d.rows[m.id], qn = pnum(x.qty), rt = pnum(x.rate), held = Math.max(0, w - qn), st = settings();
+  const carry = held * rt * (st.rate / 100 / 365) + held * st.storage / 30;
+  const presets = [["Hold", 0], ...(medP != null ? [[`Panel median ${Math.round(medP)}%`, Math.round(medP)]] : []), ["Sell all", 100]];
+  return `<form id="decision-form" class="card"><h2>Your decision</h2><p class="small muted">Prefilled with the panel median. The panel is advisory; change anything.</p>
+    <div class="pill-row" role="group" aria-label="Quick choices">${presets.map(([l, p]) => `<button type="button" class="sm" data-act="dec-pct" data-k="${p}" aria-pressed="${qn === up10(w * p / 100, w)}">${esc(l)}</button>`).join("")}</div>
+    <div class="grid2"><label>Sell now (qtl)<input data-dec="${esc(m.id)}" data-k="qty" inputmode="numeric" value="${esc(x.qty)}"><span class="sub num">of ${qtl(w)} offered</span></label>
+      <label>Not below (₹/qtl)<input data-dec="${esc(m.id)}" data-k="rate" inputmode="numeric" value="${esc(x.rate)}"><span class="sub num">${refSpot() ? `${spotName()} spot ${inr(refSpot())}` : ""}</span></label></div>
+    <div class="readback ${held ? "" : "good"}">Sell <b id="dec-tq">${q(qn)}</b> qtl at <b id="dec-tv">${rt ? inr(rt) : "–"}</b>${held ? `; <b>${qtl(held)}</b> stays unsold, costing about <b>${inr(carry)}</b> a day to hold` : ", nothing left unsold"}.</div>
+    <label>Note to the manager (optional)<textarea id="dc-note">${esc(d.dnote)}</textarea></label>
+    ${S.err.decision?`<div class="notice err">${esc(S.err.decision)}</div>`:""}
+    <button class="primary" type="submit">${d.confirmDecision ? "Tap again to record and send to the manager" : "Record decision and send to manager"}</button>${d.confirmDecision ? `<p class="small muted" style="margin:0">This sends the decision to the mill manager. Change any figure to cancel.</p>` : ""}</form>`;
+}
 function decisionSummary(r){
   const d = r.decision, ms = (r.mills||[]).filter(m => num(m.wish_to_sell));
   return `<section class="card"><h2>Owner's decision</h2><p><b>${qtl(d.total_qty)}</b> to sell now${d.total_qty?` at an average ${inr(d.avg_rate)}`:""} · ${esc(fmtDate(d.at))}</p>
-    <div class="tablewrap"><table><thead><tr><th>Mill</th><th class="r">Sell now</th><th class="r">Rate</th></tr></thead><tbody>${ms.map(m => { const x = (d.mills||{})[m.id] || {}; return `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r">${q(x.qty)}</td><td class="r">${num(x.qty)?inr(x.rate):"–"}</td></tr>`; }).join("")}</tbody></table></div>
+    ${oneRound(r) ? "" : `<div class="tablewrap"><table><thead><tr><th>Mill</th><th class="r">Sell now</th><th class="r">Rate</th></tr></thead><tbody>${ms.map(m => { const x = (d.mills||{})[m.id] || {}; return `<tr><td>Unit ${esc(m.unit_no)} · ${esc(m.name)}</td><td class="r">${q(x.qty)}</td><td class="r">${num(x.qty)?inr(x.rate):"–"}</td></tr>`; }).join("")}</tbody></table></div>`}
     ${d.note?`<p class="small">${esc(d.note)}</p>`:""}</section>`;
 }
 
@@ -1358,7 +1433,7 @@ function panelistBlock(r){
     ${num(d.sell_pct)>0&&num(d.sell_pct)<100&&d.rest==="stagger"?`<div class="grid2"><label>Lots<input id="d-lots" type="number" min="2" max="12" value="${num(d.lots)}"></label><label>Every (days)<input id="d-int" type="number" min="1" max="15" value="${num(d.interval_days)}"></label></div>`:""}
     ${num(d.sell_pct)<100?`<div class="grid2"><label>Hold horizon<select id="d-hz">${[0.5,1,2,3].map(m => `<option value="${m}" ${num(d.horizon_months)===m?"selected":""}>${m===0.5?"2 weeks":m+" month"+(m>1?"s":"")}</option>`).join("")}</select></label><label>Expected move (₹/qtl)<input id="d-move" inputmode="numeric" placeholder="e.g. 60 or -40" value="${esc(d.expected_move)}"></label></div>`:""}
     <div id="readback">${readback(r, d)}</div>
-    <details ${Object.keys(d.overrides||{}).length?"open":""}><summary>Different view for a particular mill? (optional)</summary>${overridesTable(r, d)}</details>
+    ${oneRound(r) ? "" : `<details ${Object.keys(d.overrides||{}).length?"open":""}><summary>Different view for a particular mill? (optional)</summary>${overridesTable(r, d)}</details>`}
     <div><div class="eyebrow">Why (tap once for price up, twice for down)</div><div class="reasons" style="margin-top:6px">${REASONS.map(([k,l]) => `<button type="button" data-act="reason" data-k="${k}" data-dir="${esc(d.reasons[k]||"")}">${d.reasons[k]==="up"?"↑ ":d.reasons[k]==="down"?"↓ ":""}${esc(l)}</button>`).join("")}</div></div>
     <div><div class="eyebrow">How sure are you?</div><div class="seg" style="margin-top:6px">${["low","medium","high"].map(c => `<button type="button" data-act="conv" data-k="${c}" aria-pressed="${d.conviction===c}">${c[0].toUpperCase()+c.slice(1)}</button>`).join("")}</div></div>
     ${voiceBlock(d)}
@@ -1379,7 +1454,7 @@ function readback(r, d){
   if(hold > 0 && has(d.expected_move) && ref){ const m = num(d.horizon_months), c = carry(ref, m), net = num(d.expected_move) - c;
     return `<div class="readback ${net>0?"good":"bad"}">${s}<br>Holding costs about <b>${inr(c)}/qtl</b> over ${m===0.5?"2 weeks":m+" month"+(m===1?"":"s")}. Your expected ${signed(num(d.expected_move))}/qtl nets <b>${signed(net)}/qtl</b>, about <b>${bigSigned(net*hold)}</b> on the held quantity. ${net>0?"Holding pays if you are right.":"On these numbers, waiting does not pay."}</div>`; }
   if(num(d.target_rate) && num(r.ask_rate)){ const g = num(d.target_rate) - num(r.ask_rate); s += `<br>Your target is ${g===0?"the same as":signed(g)+"/qtl against"} the manager's asking price of ${inr(r.ask_rate)}.`; }
-  if(num(d.target_rate) && refSpot()){ const gap = num(d.target_rate) - refSpot(); s += `<br>Your target is ${signed(gap)}/qtl against today's S. Karnataka S/30 spot of ${inr(refSpot())}.`; }
+  if(num(d.target_rate) && refSpot()){ const gap = num(d.target_rate) - refSpot(); s += `<br>Your target is ${signed(gap)}/qtl against today's ${spotName()} S/30 spot of ${inr(refSpot())}.`; }
   return `<div class="readback">${s}</div>`;
 }
 function voiceBlock(d){
@@ -1402,7 +1477,7 @@ function salesHistoryCard(){
   const maxQ = Math.max(...rows.map(r => r.qty)) || 1, prices = rows.map(r => r.avg_price).filter(Boolean), lo = Math.min(...prices)*0.97, hi = Math.max(...prices)*1.03;
   const bw = (W-pl-pr)/rows.length; const Yq = v => pt + (1 - v/maxQ)*(H-pt-pb), Yp = v => pt + (hi - v)/(hi-lo||1)*(H-pt-pb);
   const line = rows.map((r,i) => r.avg_price ? `${i?"L":"M"}${(pl+bw*i+bw/2).toFixed(1)} ${Yp(r.avg_price).toFixed(1)}` : "").join(" ");
-  return `<section class="card"><div class="row between"><h2>Sales history</h2><span class="small muted">${rows.length} months, all mills</span></div>
+  return `<section class="card"><div class="row between"><h2>Sales history</h2><span class="small muted">${rows.length} months${ONE() ? "" : ", all mills"}</span></div>
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Monthly quantity sold and average price">
       ${rows.map((r,i) => `<rect x="${pl+bw*i+1}" y="${Yq(r.qty)}" width="${Math.max(1,bw-2)}" height="${H-pb-Yq(r.qty)}" fill="var(--cane-soft)" stroke="var(--cane)" stroke-width=".5"><title>${esc(r.month)}: ${q(r.qty)} qtl at ${r.avg_price?inr(r.avg_price):"–"}</title></rect>`).join("")}
       <path d="${line}" fill="none" stroke="var(--jaggery)" stroke-width="2"/>
@@ -1426,8 +1501,8 @@ function adminView(){
   <section class="card"><h2>${esc(monthLabel(mk))} at a glance</h2>
     <div class="stat"><div><div class="n num">${rs.length}</div><div class="l">Advisory rounds</div></div><div><div class="n num">${dec.length}</div><div class="l">Decided</div></div>
       <div><div class="n num">${q(qty)}</div><div class="l">Quintals approved to sell</div></div><div><div class="n num">${qty?inr(val/qty):"–"}</div><div class="l">Avg approved rate${trendAvg?` · spot avg ${inr(trendAvg)}`:""}</div></div></div>
-    <div class="readback ${outcome>=0?"good":"bad"}">${scored?`Against the S. Karnataka S/30 price 30 days after each decision, net of holding cost, this month's decisions ${outcome>=0?"saved":"cost"} about <b>${big(Math.abs(outcome))}</b> across ${scored} scored round${scored===1?"":"s"}.`:"Enter the S/30 price 15 and 30 days after each decision in the round log to score the month."}</div></section>
-  <section class="card"><h2>Round log</h2><p class="small muted">Prices after are S. Karnataka S/30, entered until the live price feed fills them in.</p>
+    <div class="readback ${outcome>=0?"good":"bad"}">${scored?`Against the ${spotName()} S/30 price 30 days after each decision, net of holding cost, this month's decisions ${outcome>=0?"saved":"cost"} about <b>${big(Math.abs(outcome))}</b> across ${scored} scored round${scored===1?"":"s"}.`:"Enter the S/30 price 15 and 30 days after each decision in the round log to score the month."}</div></section>
+  <section class="card"><h2>Round log</h2><p class="small muted">Prices after are ${spotName()} S/30, entered until the live price feed fills them in.</p>
     <div class="tablewrap"><table><thead><tr><th>Date</th><th class="r">Wish</th><th>Panel</th><th>AI</th><th class="r">Approved</th><th class="r">Rate</th><th class="r">After 15d</th><th class="r">After 30d</th>${V3?"<th></th>":""}</tr></thead><tbody>
     ${rs.length?rs.map(r => { const vs = viewsFor(r.id), sp = splitOf(vs, r); return `<tr><td>${esc(fmtDay(r.created_at))}${r.example?" *":""}</td><td class="r">${q((r.mills||[]).reduce((s,m)=>s+num(m.wish_to_sell),0))}</td><td>${vs.length?`median ${Math.round(sp.medPct)}%`:"–"}</td><td>${r.brief&&r.brief.lean?esc(SIDE_LABEL[r.brief.lean.side]||""):r.brief?"Summary":"–"}</td><td class="r">${r.decision?q(r.decision.total_qty):"Open"}</td><td class="r">${r.decision&&r.decision.total_qty?inr(r.decision.avg_rate):"–"}</td>
       <td class="r"><input aria-label="Price after 15 days" data-pa="${esc(r.id)}" data-k="d15" inputmode="numeric" value="${esc(r.price_after&&r.price_after.d15||"")}"></td><td class="r"><input aria-label="Price after 30 days" data-pa="${esc(r.id)}" data-k="d30" inputmode="numeric" value="${esc(r.price_after&&r.price_after.d30||"")}"></td>${V3?`<td class="r">${delRoundBtn(r, true)}</td>`:""}</tr>`; }).join(""):`<tr><td colspan="8" class="muted">No rounds this month.</td></tr>`}
@@ -1999,7 +2074,7 @@ function managerHomeV3(){
   return `<div class="layout"><div class="main">
     ${last && last.decision ? decisionCardMgr(last) : ""}
     ${last && isOpen(last) ? latestRoundCard() : ""}
-    <div class="row between" id="new-round-card"><h2>New round · Step 1: how much to sell</h2><span class="row small" style="gap:8px"><span class="muted">Wish to sell in</span>${unitSeg("wish-unit", S.draft.wishUnit || "qtl", ["Quintals", "% of balance"])}</span></div>
+    <div class="row between" id="new-round-card"><h2>New round · Step 1: how much to ${ONE() ? "offer" : "sell"}</h2>${ONE() ? "" : `<span class="row small" style="gap:8px"><span class="muted">Wish to sell in</span>${unitSeg("wish-unit", S.draft.wishUnit || "qtl", ["Quintals", "% of balance"])}</span>`}</div>
     <section class="card">${millsTable(true)}</section>
     <form id="round-form" class="card" style="border-color:var(--cane);border-width:2px"><h2>Step 2 · Price band and send</h2>
       <p class="small muted">The band is the headline of the round. All prices are M/30.</p>
@@ -2009,8 +2084,8 @@ function managerHomeV3(){
         <span class="small muted" style="align-self:flex-end">Open for 24 hours unless you change it.</span></div>
       <fieldset class="flags-pick"><legend>Anything urgent the panel must know?</legend><span class="small muted">Only ticked items show at the top of the round, in red.</span>${FLAGS.map(([k,l,ds]) => `<label class="chk"><input type="checkbox" data-flag="${k}" ${rd.flags && rd.flags[k] ? "checked" : ""}><span><b>${l}</b><small>${ds}</small></span></label>`).join("")}</fieldset>
       <label>Note for the panel (optional)<textarea id="rd-note" placeholder="e.g. cane payments due on the 5th; buyers active in Bengaluru">${esc(rd.note || "")}</textarea></label>
-      <div class="row between"><span class="small"><b class="num">${qtl(wish)}</b> to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills</span><button class="primary" type="submit" ${wish ? "" : "disabled"}>Send to the panel</button></div>
-      ${wish ? "" : `<p class="small muted">Enter a wish-to-sell quantity for at least one mill in step 1 to send the round.</p>`}
+      <div class="row between"><span class="small"><b class="num">${qtl(wish)}</b> ${ONE() ? `to offer from ${esc(ms[0].name)}` : `to sell across ${ms.filter(m => num(m.wish_to_sell)).length} mills`}</span><button class="primary" type="submit" ${wish ? "" : "disabled"}>Send to the panel</button></div>
+      ${wish ? "" : `<p class="small muted">${ONE() ? "Enter how much to offer in step 1 to send the round." : "Enter a wish-to-sell quantity for at least one mill in step 1 to send the round."}</p>`}
     </form>
     ${fromPanelCard()}
     ${kpiStrip()}
@@ -2018,7 +2093,7 @@ function managerHomeV3(){
 }
 async function submitRoundV3(){
   const ms = millsSorted().filter(m => num(m.wish_to_sell) > 0);
-  if(!ms.length){ toast("Enter a wish-to-sell quantity for at least one mill"); return; }
+  if(!ms.length){ toast(ONE() ? "Enter how much to offer" : "Enter a wish-to-sell quantity for at least one mill"); return; }
   let lo = pnum($("#rd-bmin").value), hi = pnum($("#rd-bmax").value);
   if(!lo && !hi){ toast("Enter the price band"); $("#rd-bmin").focus(); return; }
   if(!lo) lo = hi; if(!hi) hi = lo; if(lo > hi){ const t = lo; lo = hi; hi = t; }
@@ -2055,8 +2130,8 @@ function kpiStrip(){
     <div class="kpi-grid">
       <div class="kpi"><div class="kl">Sold this month</div><div class="kn num">${cur.qty ? q(cur.qty) : "0"}<small> qtl</small></div>${deltaChip(cur.qty, prev.qty, pl)}</div>
       <div class="kpi"><div class="kl">Average price</div><div class="kn num">${cur.avg ? inr(cur.avg) : "–"}</div>${deltaChip(cur.avg, prev.avg, pl)}</div>
-      <div class="kpi"><div class="kl">Balance quota</div><div class="kn num">${q(t.bq)}<small> qtl</small></div><span class="kd muted">${millsSorted().length} mills</span></div>
-      <div class="kpi"><div class="kl">S. Karnataka spot</div><div class="kn num">${spot ? inr(spot) : "–"}</div><span class="kd muted">M/30, ₹/qtl</span></div>
+      <div class="kpi"><div class="kl">Balance quota</div><div class="kn num">${q(t.bq)}<small> qtl</small></div><span class="kd muted">${ONE() ? esc(millsSorted()[0].name) : millsSorted().length + " mills"}</span></div>
+      <div class="kpi"><div class="kl">${esc(spotName())} spot</div><div class="kn num">${spot ? inr(spot) : "–"}</div><span class="kd muted">M/30, ₹/qtl</span></div>
     </div></section>`;
 }
 function countLine(n, word, extra){ return `<p class="count">${n} ${word}${n === 1 ? "" : "s"}${extra ? " · " + extra : ""}</p>`; }
@@ -2072,7 +2147,7 @@ function ownerHomeV3(){
     ${kpiStrip()}
     ${last && !due.has(last.id) ? latestRoundCard() : ""}
     ${fromPanelCard()}
-    <section class="card"><div class="row between"><h2>Mill-wise position</h2><span class="small muted">${millsSorted().length} units</span></div>${millsTable(false)}</section>
+    <section class="card"><div class="row between"><h2>${ONE() ? esc(millsSorted()[0].name) + " mill" : "Mill-wise position"}</h2><span class="small muted">${ONE() ? esc(millsSorted()[0].location || "") : millsSorted().length + " units"}</span></div>${millsTable(false)}</section>
   </div></div>`;
 }
 
@@ -2230,7 +2305,7 @@ const flagBanner = r => { const f = flagsOf(r); return f.length ? `<div class="f
 const stanceSeg = (cur) => `<div class="seg big">${STANCES.map(([k,l]) => `<button type="button" class="st-${k}" data-act="stance" data-k="${k}" aria-pressed="${cur===k}">${l}</button>`).join("")}</div>`;
 const dirSeg = (cur) => `<div class="seg big">${DIRS.map(([k,l,a]) => `<button type="button" data-act="dir" data-k="${k}" aria-pressed="${cur===k}">${a} ${l}</button>`).join("")}</div>`;
 const stChip = s => s ? `<span class="stchip st-${s}">${esc(STANCE_LABEL[s]||s)}</span>` : "";
-function roundSummaryLine(r){ const ms = (r.mills||[]).filter(m => num(m.wish_to_sell)), w = ms.reduce((s,m) => s + num(m.wish_to_sell), 0); return `<span class="small"><b>${qtl(w)}</b> to sell across ${ms.length} mills · closes ${esc(fmtDate(r.valid_until))}</span>`; }
+function roundSummaryLine(r){ const ms = (r.mills||[]).filter(m => num(m.wish_to_sell)), w = ms.reduce((s,m) => s + num(m.wish_to_sell), 0); return `<span class="small"><b>${qtl(w)}</b> ${oneRound(r) && ms[0] ? `offered from ${esc(ms[0].name)}, of ${qtl(ms[0].balance_quota)} balance quota` : `to sell across ${ms.length} mills`} · closes ${esc(fmtDate(r.valid_until))}</span>`; }
 function roundHeadV2(r){
   return `<section class="card"><div class="row between"><h1>${esc(r.title||"Advisory round")}</h1>${roundChip(r)}</div>
     ${flagBanner(r)}
@@ -2239,6 +2314,9 @@ function roundHeadV2(r){
     <div class="small muted">Started ${esc(fmtDate(r.created_at))} by ${esc(userName(r.created_by))}${r.example?` · <span class="chip ex">example round</span>`:""}</div></section>`;
 }
 function millsCard(r, collapsed){
+  if(oneRound(r)){ const m = r.mills[0];
+    const body = `<div class="kv small"><span>Stock in warehouse</span><b class="num">${qtl(m.stock_wh)}</b><span>Quota this period</span><b class="num">${qtl(m.quota)}</b><span>Sold before this round</span><b class="num">${qtl(m.sold_qty)}${num(m.sold_avg_price) ? ` at ${inr(m.sold_avg_price)}` : ""}</b><span>Balance quota</span><b class="num">${qtl(m.balance_quota)}</b><span>Offered in this round</span><b class="num">${qtl(m.wish_to_sell)}</b></div>`;
+    return collapsed ? `<details class="card"><summary>${esc(m.name)} when the round was posted</summary>${body}</details>` : `<section class="card"><h2>${esc(m.name)} when the round was posted</h2>${body}</section>`; }
   const ms = (r.mills||[]).filter(m => num(m.wish_to_sell));
   const t = ms.reduce((a,m) => ({quota:a.quota+num(m.quota), sold:a.sold+num(m.sold_qty), bq:a.bq+num(m.balance_quota), wish:a.wish+num(m.wish_to_sell)}), {quota:0,sold:0,bq:0,wish:0});
   const table = `<div class="tablewrap"><table><thead><tr><th>Unit</th><th>Mill</th><th>Code</th><th class="r">Quota</th><th class="r">Sold</th><th class="r">Balance quota</th><th class="r">To sell</th></tr></thead>
@@ -2392,7 +2470,7 @@ function panelistBlockV2(r){
       ${some&&!V3?`<div class="grid2"><label>The rest<select id="d-rest"><option value="hold" ${d.rest==="hold"?"selected":""}>Hold</option><option value="stagger" ${d.rest==="stagger"?"selected":""}>Stagger</option></select></label><span></span></div>`:""}
       ${some&&!V3&&d.rest==="stagger"?`<div class="grid2"><label>Lots<input id="d-lots" type="number" min="2" max="12" value="${num(d.lots)}"></label><label>Every (days)<input id="d-int" type="number" min="1" max="15" value="${num(d.interval_days)}"></label></div>`:""}
       <div id="readback">${readback(r, d)}</div>
-      <div><div class="eyebrow">Different view for a particular mill?</div>${overridesTable(r, d)}</div>
+      ${oneRound(r) ? "" : `<div><div class="eyebrow">Different view for a particular mill?</div>${overridesTable(r, d)}</div>`}
       </div></div>
     ${S.err.view?`<div class="notice err">${esc(S.err.view)}</div>`:""}
     <div class="row"><button class="primary" type="submit">${mine?"Update my view":"Send my view"}</button>${mine?`<button type="button" class="ghost" data-act="cancel-edit">Cancel</button>`:""}</div>
@@ -2454,6 +2532,10 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if(!b) return;
   const a = b.dataset.act, d = S.draft;
   if(await v3Click(a, b, d)) return;
+  if(a === "wish-pct"){ const m = millsSorted()[0]; if(!m) return; const v = up10(balQuota(m) * num(b.dataset.k) / 100, balQuota(m)); await saveC("mills/" + m.id, {wish_to_sell:v, updated_at:new Date().toISOString(), updated_by:S.me.id}, true).catch(err => toast(err.message || "Could not save")); return; }
+  if(a === "dec-pct"){ const r = S.rounds.find(x => x.id === S.route.id), m = r && r.mills[0]; if(!m || !d.rows || !d.rows[m.id]) return; d.rows[m.id].qty = up10(num(m.wish_to_sell) * num(b.dataset.k) / 100, m.wish_to_sell); d.confirmDecision = false; render(); return; }
+  if(a === "demo-login" && DEMO){ const u = S.users.find(x => x.id === b.dataset.id); if(u) await finishLogin(u); return; }
+  if(a === "demo-reset" && DEMO){ window.TARAZU_DEMO_RESET && window.TARAZU_DEMO_RESET(); return; }
   if(a === "login-demo"){ S.route = {name:"phone-login"}; S.err = {}; S.draft = {}; render(); return; }
   if(a === "login-back"){ S.route = {name:"home"}; S.err = {}; S.draft = {}; render(); return; }
   if(a === "stance"){ S.err.view = ""; if(!(b.dataset.k === "some" && d.stance === "some")) d.sell_pct = ({sell:100, some:50, hold:0})[b.dataset.k]; d.stance = b.dataset.k; render(); return; }
@@ -2639,7 +2721,7 @@ function roundUrgency(){
 async function submitRound(){
   if(V3) return submitRoundV3();
   const ms = millsSorted().filter(m => num(m.wish_to_sell) > 0);
-  if(!ms.length){ toast("Enter a wish-to-sell quantity for at least one mill"); return; }
+  if(!ms.length){ toast(ONE() ? "Enter how much to offer" : "Enter a wish-to-sell quantity for at least one mill"); return; }
   const ask = pnum($("#rd-ask").value), floor = pnum($("#rd-floor").value);
   if(!ask){ toast("Enter the average price you want"); $("#rd-ask").focus(); return; }
   if(floor && floor > ask){ toast("The lowest price can't be above the price you want"); $("#rd-floor").focus(); return; }
@@ -2680,6 +2762,13 @@ async function submitView(){
   try{ await saveC("rviews/"+r.id+"__"+S.me.id, data); S.draft = {}; toast(mine ? (kind==="change"?"View changed. The owner has been told.":"View updated") : "View sent to the owner"); render(); }
   catch(err){ S.err.view = err.message || "Could not save your view."; render(); }
 }
+/* sample client only: book the decided quantity as sold, standing in for the sales feed from the mill's own software */
+async function demoBookSale(r, decision){
+  for(const [mid, x] of Object.entries(decision.mills || {})){ const m = S.mills.find(y => y.id === mid); if(!m || !num(x.qty)) continue;
+    const sold = num(m.sold_qty) + num(x.qty), avg = Math.round((num(m.sold_qty) * num(m.sold_avg_price) + num(x.qty) * num(x.rate)) / sold), now = new Date();
+    await saveC("mills/" + mid, {sold_qty:sold, sold_avg_price:avg, wish_to_sell:0, updated_at:now.toISOString()}, true);
+    await saveC("ledger/d" + Date.now().toString(36), {date:new Date(now.getTime() + IST_MS).toISOString().slice(0,10), mill_id:mid, mill_code:m.code, mill_name:m.name, qty:num(x.qty), rate:num(x.rate), grade:"M/30", source:"feed", created_at:now.toISOString()}); }
+}
 async function submitDecision(){
   const d = S.draft, r = S.rounds.find(x => x.id === S.route.id), ms = (r.mills||[]).filter(m => num(m.wish_to_sell));
   const mills = {}; let tq = 0, tv = 0;
@@ -2687,7 +2776,7 @@ async function submitDecision(){
     if(qn > 0 && (rt < 1000 || rt > 20000)){ S.err.decision = `Check the rate for ${m.name}: enter ₹ per quintal, e.g. 5350.`; render(); return; }
     const bs = num(m.stock_wh) ? Math.max(0, num(m.stock_wh) - num(m.sold_qty)) : 0; if(bs && qn > bs){ S.err.decision = `${m.name}: ${qtl(qn)} is more than its balance stock of ${qtl(bs)}.`; render(); return; } mills[m.id] = {qty:qn, rate:rt||null}; tq += qn; tv += qn*rt; }
   const decision = {mills, total_qty:tq, avg_rate:tq?Math.round(tv/tq):null, note:d.dnote||"", by:S.me.id, at:new Date().toISOString()};
-  try{ await saveC("rounds/"+r.id, {status:"decided", decision}, true); S.draft = {}; toast("Decision recorded and sent to the manager"); }catch(err){ S.err.decision = err.message || "Could not save."; render(); }
+  try{ await saveC("rounds/"+r.id, {status:"decided", decision}, true); if(DEMO) await demoBookSale(r, decision); S.draft = {}; toast("Decision recorded and sent to the manager"); }catch(err){ S.err.decision = err.message || "Could not save."; render(); }
 }
 async function recStart(btn){
   if(REC.on || S.busy.voice) return;
