@@ -14,6 +14,10 @@ RewriteRule ^admin/(.+)$ $1 [L]
 RewriteRule ^nirani$ /nirani/ [R=301,L]
 RewriteRule ^nirani/$ index.html [L]
 RewriteRule ^nirani/(.+)$ $1 [L]
+# /gurudatt/ is a sample client (Shri Gurudatt Sugars, one mill): same app, in-browser sample data, no server calls
+RewriteRule ^gurudatt$ /gurudatt/ [R=301,L]
+RewriteRule ^gurudatt/$ index.html [L]
+RewriteRule ^gurudatt/(.+)$ $1 [L]
 
 # Report PDFs are served only through api.php?op=file with a signed, short-lived link
 RewriteRule ^files(/|$) - [F,L]
@@ -26,7 +30,7 @@ RewriteRule ^ - [L]
 RedirectMatch 404 /\.git
 
 <IfModule mod_headers.c>
-  <FilesMatch "^(home\.html|index\.html|sw\.js|manifest\.webmanifest|privacy\.html|delete-account\.html)$">
+  <FilesMatch "^(home\.html|demo-store\.js|index\.html|sw\.js|manifest\.webmanifest|privacy\.html|delete-account\.html)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"

@@ -5,6 +5,8 @@ if (preg_match('#^/admin$#', $u)) { header('Location: /admin/', true, 301); exit
 if (preg_match('#^/admin/(.*)$#', $u, $m)) $u = '/' . ($m[1] === '' ? 'index.html' : $m[1]);
 if (preg_match('#^/nirani$#', $u)) { header('Location: /nirani/', true, 301); exit; }
 if (preg_match('#^/nirani/(.*)$#', $u, $m)) $u = '/' . ($m[1] === '' ? 'index.html' : $m[1]);
+if (preg_match('#^/gurudatt$#', $u)) { header('Location: /gurudatt/', true, 301); exit; }
+if (preg_match('#^/gurudatt/(.*)$#', $u, $m)) $u = '/' . ($m[1] === '' ? 'index.html' : $m[1]);
 if (preg_match('#^/files(/|$)#', $u)) { http_response_code(403); exit; }
 if (preg_match('#^/(config\.php|seed\.json|.*\.sqlite.*)$#', $u)) { http_response_code(403); exit; }
 if ($u === '/' ) $u = '/home.html';
